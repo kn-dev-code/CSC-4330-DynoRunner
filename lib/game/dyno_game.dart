@@ -2,7 +2,7 @@ import 'package:flame/game.dart';
 
 enum GameState { intro, playing, gameOver }
 
-class DynoGame extends FlameGame {
+class DynoGame extends FlameGame with HasCollisionDetection {
   GameState state = GameState.intro;
 
   @override

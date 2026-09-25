@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:dyno_app/game/dyno_game.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('DynoGame', () {
     test('is a FlameGame', () {
       expect(DynoGame(), isA<FlameGame>());
@@ -14,7 +16,9 @@ void main() {
     });
 
     test('onLoad completes without throwing', () async {
-      await expectLater(DynoGame().onLoad(), completes);
+      final game = DynoGame();
+      game.onGameResize(Vector2(800, 600));
+      await expectLater(game.onLoad(), completes);
     });
 
     test('state can advance through the game lifecycle', () {

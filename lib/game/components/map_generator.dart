@@ -4,12 +4,15 @@ import 'package:flame/components.dart';
 
 import '../dyno_game.dart';
 import '../game_config.dart';
+import 'cave.dart';
 import 'collidable_sprite.dart';
 
 /// Spawns and scrolls obstacles from right to left across the playfield.
 ///
-/// Obstacles are pre-loaded into a pool during [onLoad] so new walls can be
-/// activated during [update] without enqueueing lifecycle events mid-frame.
+/// Each spawn is either a short or tall ground wall, or a [Cave] ceiling the
+/// player runs underneath. Everything is pre-loaded into a pool during
+/// [onLoad] so new pieces can be activated during [update] without
+/// enqueueing lifecycle events mid-frame.
 class MapGenerator extends Component with HasGameReference<DynoGame> {
   MapGenerator({
     required this.groundY,
@@ -18,6 +21,7 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
     this.maxSpawnInterval = GameConfig.maxSpawnInterval,
     this.minGap = GameConfig.minObstacleGap,
     this.poolSize = 5,
+    this.caveChance = GameConfig.caveChance,
     Random? random,
   }) : _random = random ?? Random();
 
@@ -27,15 +31,22 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
   final double maxSpawnInterval;
   final double minGap;
   final int poolSize;
+  final double caveChance;
 
   final Random _random;
-  final List<CollidableSprite> _active = [];
+  final List<PositionComponent> _active = [];
   late final List<CollidableSprite> _inactive;
+  late final List<Cave> _inactiveCaves;
 
   double _spawnTimer = 0;
   double _nextSpawnIn = 0;
 
-  Iterable<CollidableSprite> get obstacles => _active;
+  /// Ground walls currently on screen.
+  Iterable<CollidableSprite> get obstacles =>
+      _active.whereType<CollidableSprite>();
+
+  /// Caves currently on screen.
+  Iterable<Cave> get caves => _active.whereType<Cave>();
 
   @override
   Future<void> onLoad() async {
@@ -54,6 +65,22 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
       }
     }
     _inactive = pool;
+
+    final caves = <Cave>[];
+    for (
+      var columns = GameConfig.minCaveColumns;
+      columns <= GameConfig.maxCaveColumns;
+      columns++
+    ) {
+      final cave = Cave(groundY: groundY, columns: columns)
+        ..position = Vector2(
+          -GameConfig.offscreenX - columns * GameSprite.wallTall.width,
+          0,
+        );
+      await add(cave);
+      caves.add(cave);
+    }
+    _inactiveCaves = caves;
     _scheduleNextSpawn(initial: true);
   }
 
@@ -74,7 +101,12 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
     for (final obstacle in _active.toList()) {
       obstacle.position.x -= delta;
       if (obstacle.position.x + obstacle.size.x < 0) {
-        _recycle(obstacle);
+        switch (obstacle) {
+          case final CollidableSprite wall:
+            _recycle(wall);
+          case final Cave cave:
+            _recycleCave(cave);
+        }
       }
     }
   }
@@ -103,6 +135,17 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
   }
 
   void _spawnObstacle(double gameWidth) {
+    if (caveChance > 0 &&
+        _inactiveCaves.isNotEmpty &&
+        _random.nextDouble() < caveChance) {
+      final cave = _inactiveCaves.removeAt(
+        _random.nextInt(_inactiveCaves.length),
+      );
+      cave.position.x = gameWidth + GameConfig.spawnMargin;
+      _active.add(cave);
+      return;
+    }
+
     final artwork = _random.nextBool()
         ? GameSprite.wallShort
         : GameSprite.wallTall;
@@ -136,6 +179,12 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
       groundY - obstacle.artwork.height,
     );
     _inactive.add(obstacle);
+  }
+
+  void _recycleCave(Cave cave) {
+    _active.remove(cave);
+    cave.position.x = -GameConfig.offscreenX - cave.size.x;
+    _inactiveCaves.add(cave);
   }
 
   void _scheduleNextSpawn({bool initial = false}) {

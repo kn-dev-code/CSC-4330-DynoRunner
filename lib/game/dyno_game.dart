@@ -26,6 +26,10 @@ class DynoGame extends FlameGame with HasCollisionDetection {
   }
 
   Future<void> _buildWorld() async {
+    // Map world coordinates 1:1 onto the screen. The default viewfinder
+    // centers the origin, which pushes the ground line below the screen.
+    camera.viewfinder.anchor = Anchor.topLeft;
+
     final groundY = GameConfig.groundY(size);
 
     background = Background(groundY: groundY);

@@ -1,8 +1,10 @@
 import 'dart:math';
 
+import 'package:dyno_app/game/components/cave.dart';
 import 'package:dyno_app/game/components/collidable_sprite.dart';
 import 'package:dyno_app/game/components/map_generator.dart';
 import 'package:dyno_app/game/dyno_game.dart';
+import 'package:dyno_app/game/game_config.dart';
 import 'package:flame/components.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -41,10 +43,14 @@ void main() {
         game.update(1 / 60);
       }
 
-      expect(generator.obstacles.length, greaterThanOrEqualTo(1));
+      expect(
+        generator.obstacles.length + generator.caves.length,
+        greaterThanOrEqualTo(1),
+      );
       expect(
         generator.obstacles.map((obstacle) => obstacle.artwork).toSet(),
         anyOf([
+          <GameSprite>{},
           {GameSprite.wallShort},
           {GameSprite.wallTall},
           {GameSprite.wallShort, GameSprite.wallTall},
@@ -62,6 +68,7 @@ void main() {
         maxSpawnInterval: 0,
         minGap: 0,
         poolSize: 1,
+        caveChance: 0,
         random: Random(0),
       );
       await game.world.add(generator);
@@ -92,6 +99,7 @@ void main() {
         maxSpawnInterval: 0,
         minGap: 0,
         poolSize: 1,
+        caveChance: 0,
         random: Random(1),
       );
       await game.world.add(generator);
@@ -101,11 +109,81 @@ void main() {
 
       expect(generator.obstacles, isNotEmpty);
       for (final obstacle in generator.obstacles) {
-        expect(
-          obstacle.position.y + obstacle.size.y,
-          closeTo(groundY, 0.001),
-        );
+        expect(obstacle.position.y + obstacle.size.y, closeTo(groundY, 0.001));
       }
+      game.onRemove();
+    });
+
+    test('spawns caves that scroll and recycle like walls', () async {
+      final game = await _loadGame();
+      final generator = MapGenerator(
+        groundY: 510,
+        scrollSpeed: 300,
+        minSpawnInterval: 0,
+        maxSpawnInterval: 0,
+        minGap: 0,
+        caveChance: 1,
+        random: Random(0),
+      );
+      await game.world.add(generator);
+      await game.ready();
+
+      game.update(0);
+      expect(generator.obstacles, isEmpty);
+      expect(generator.caves.length, 1);
+
+      final cave = generator.caves.first;
+      final startX = cave.position.x;
+      game.state = GameState.intro;
+      game.update(1);
+      expect(cave.position.x, lessThan(startX));
+
+      cave.position.x = -cave.size.x - 1;
+      game.update(0);
+      expect(generator.caves, isEmpty);
+      game.onRemove();
+    });
+  });
+
+  group('Cave', () {
+    test('leaves room for the running dinosaur without jumping', () async {
+      final game = await _loadGame(state: GameState.intro);
+      const groundY = 510.0;
+      final cave = Cave(groundY: groundY, columns: 4);
+      await game.world.add(cave);
+      await game.ready();
+
+      final blocks = cave.children.whereType<CollidableSprite>().toList();
+      expect(blocks, isNotEmpty);
+      expect(cave.size.x, 4 * GameSprite.wallTall.width);
+
+      final ceilingBottom = blocks
+          .map((block) => block.position.y + block.size.y)
+          .reduce(max);
+      final ceilingTop = blocks.map((block) => block.position.y).reduce(min);
+
+      expect(ceilingBottom, closeTo(groundY - GameConfig.caveClearance, 0.001));
+      expect(groundY - ceilingBottom, greaterThan(GameSprite.dinoRun1.height));
+      // The ceiling reaches the top of the screen so it reads as a cave.
+      expect(ceilingTop, lessThanOrEqualTo(0));
+      game.onRemove();
+    });
+
+    test('does not collide with a dinosaur running underneath', () async {
+      final game = await _loadGame(state: GameState.intro);
+      final groundY = GameConfig.groundY(game.size);
+      final player = CollidableSprite(
+        artwork: GameSprite.dinoRun1,
+        position: Vector2(100, groundY),
+        anchor: Anchor.bottomLeft,
+      );
+      final cave = Cave(groundY: groundY, columns: 3)
+        ..position = Vector2(80, 0);
+      await game.world.addAll([player, cave]);
+      await game.ready();
+
+      game.update(0);
+      expect(player.activeCollisions, isEmpty);
       game.onRemove();
     });
   });

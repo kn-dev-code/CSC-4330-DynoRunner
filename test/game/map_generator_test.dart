@@ -32,6 +32,7 @@ void main() {
       }
 
       expect(game.mapGenerator.obstacles, isEmpty);
+      expect(game.mapGenerator.caves, isEmpty);
       game.onRemove();
     });
 

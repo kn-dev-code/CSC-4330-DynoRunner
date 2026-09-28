@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:dyno_app/game/dyno_game.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('DynoGame', () {
     test('is a FlameGame', () {
       expect(DynoGame(), isA<FlameGame>());
@@ -14,8 +16,8 @@ void main() {
     });
 
     test('onLoad completes without throwing', () async {
-      TestWidgetsFlutterBinding.ensureInitialized();
-      final game = DynoGame()..onGameResize(Vector2(800, 400));
+      final game = DynoGame();
+      game.onGameResize(Vector2(800, 600));
       await expectLater(game.onLoad(), completes);
     });
 

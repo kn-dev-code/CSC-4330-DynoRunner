@@ -14,7 +14,9 @@ void main() {
     });
 
     test('onLoad completes without throwing', () async {
-      await expectLater(DynoGame().onLoad(), completes);
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final game = DynoGame()..onGameResize(Vector2(800, 400));
+      await expectLater(game.onLoad(), completes);
     });
 
     test('state can advance through the game lifecycle', () {

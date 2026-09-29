@@ -11,6 +11,15 @@ class GameConfig {
   static const spawnMargin = 20.0;
   static const offscreenX = 200.0;
 
+  static const playerX = 50.0;
+  static const gravity = 1200.0;
+  static const jumpVelocity = -450.0;
+  static const runFrameDuration = 0.1;
+
+  /// Scroll speed is treated as pixels per second; divide by this for meters.
+  static const pixelsPerMeter = 100.0;
+  static const moneyPerMeter = 0.25;
+
   /// Chance that a spawn is a cave instead of a ground wall.
   static const caveChance = 0.3;
   static const minCaveColumns = 3;

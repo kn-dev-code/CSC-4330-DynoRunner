@@ -33,6 +33,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Leaderboard server database
+server/data/*.sqlite
+
 # Symbolication related
 app.*.symbols
 

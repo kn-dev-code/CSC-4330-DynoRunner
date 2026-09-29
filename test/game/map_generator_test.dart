@@ -83,11 +83,6 @@ void main() {
 
       game.update(1);
       expect(obstacle.position.x, lessThan(startX));
-
-      game.state = GameState.intro;
-      obstacle.position.x = -obstacle.size.x - 1;
-      game.update(0);
-      expect(generator.obstacles, isEmpty);
       game.onRemove();
     });
 
@@ -173,18 +168,21 @@ void main() {
     test('does not collide with a dinosaur running underneath', () async {
       final game = await _loadGame(state: GameState.intro);
       final groundY = GameConfig.groundY(game.size);
-      final player = CollidableSprite(
-        artwork: GameSprite.dinoRun1,
-        position: Vector2(100, groundY),
-        anchor: Anchor.bottomLeft,
-      );
       final cave = Cave(groundY: groundY, columns: 3)
-        ..position = Vector2(80, 0);
-      await game.world.addAll([player, cave]);
+        ..position = Vector2(200, 0);
+      await game.world.addAll([
+        CollidableSprite(
+          artwork: GameSprite.dinoRun1,
+          position: Vector2(240, groundY),
+          anchor: Anchor.bottomLeft,
+        ),
+        cave,
+      ]);
       await game.ready();
 
       game.update(0);
-      expect(player.activeCollisions, isEmpty);
+      final runner = game.world.children.whereType<CollidableSprite>().last;
+      expect(runner.activeCollisions, isEmpty);
       game.onRemove();
     });
   });

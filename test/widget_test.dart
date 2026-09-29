@@ -15,7 +15,7 @@ void main() {
     await tester.pumpWidget(const DynoRunnerApp());
 
     expect(find.byType(MaterialApp), findsOneWidget);
-    expect(find.byType(Scaffold), findsOneWidget);
+    expect(find.byType(GameScreen), findsOneWidget);
   });
 
   testWidgets('DynoRunnerApp hosts a GameWidget for DynoGame', (tester) async {

@@ -14,6 +14,9 @@ enum GameState { intro, playing, gameOver }
 
 class DynoGame extends FlameGame
     with HasCollisionDetection, TapCallbacks, KeyboardEvents {
+  DynoGame({this.startImmediately = false});
+
+  final bool startImmediately;
   GameState state = GameState.intro;
 
   late final Background background;
@@ -45,6 +48,9 @@ class DynoGame extends FlameGame
     }
 
     await _buildWorld();
+    if (startImmediately) {
+      startRun();
+    }
   }
 
   Future<void> _buildWorld() async {

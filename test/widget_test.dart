@@ -1,7 +1,7 @@
 // Widget tests for the app shell that hosts the Flame game.
 //
 // The game itself is covered in test/game/dyno_game_test.dart; these tests
-// only assert that the app boots and hands the screen to a GameWidget.
+// only assert that the app boots into the title screen.
 
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
@@ -15,11 +15,13 @@ void main() {
     await tester.pumpWidget(const DynoRunnerApp());
 
     expect(find.byType(MaterialApp), findsOneWidget);
-    expect(find.byType(GameScreen), findsOneWidget);
+    expect(find.byType(TitleScreen), findsOneWidget);
   });
 
-  testWidgets('DynoRunnerApp hosts a GameWidget for DynoGame', (tester) async {
+  testWidgets('title screen starts a game', (tester) async {
     await tester.pumpWidget(const DynoRunnerApp());
+    await tester.tap(find.text('Start game'));
+    await tester.pump();
 
     expect(find.byType(GameWidget<DynoGame>), findsOneWidget);
   });

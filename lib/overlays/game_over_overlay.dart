@@ -115,15 +115,29 @@ class _GameOverOverlayState extends State<GameOverOverlay> {
                       : const Text('Submit to leaderboard'),
                 ),
                 const SizedBox(height: 8),
-                OutlinedButton(
+                OutlinedButton.icon(
                   onPressed: widget.game.startRun,
-                  child: const Text('Run again'),
+                  icon: const Icon(Icons.replay),
+                  label: const Text('Replay'),
                 ),
-                TextButton(
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
                   onPressed: () {
                     Navigator.of(context).pushNamed('/leaderboard');
                   },
-                  child: const Text('View leaderboard'),
+                  icon: const Icon(Icons.leaderboard),
+                  label: const Text('View leaderboard'),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pushNamedAndRemoveUntil(
+                      '/',
+                      (route) => false,
+                    );
+                  },
+                  icon: const Icon(Icons.home),
+                  label: const Text('Back to title screen'),
                 ),
                 if (_status != null) ...[
                   const SizedBox(height: 8),

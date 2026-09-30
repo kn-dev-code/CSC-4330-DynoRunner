@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../game/dyno_game.dart';
+import '../services/game_audio.dart';
 import '../services/leaderboard_service.dart';
 
 class GameOverOverlay extends StatefulWidget {
@@ -116,7 +119,10 @@ class _GameOverOverlayState extends State<GameOverOverlay> {
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
-                  onPressed: widget.game.startRun,
+                  onPressed: () {
+                    unawaited(GameAudio.playGameMusic());
+                    widget.game.startRun();
+                  },
                   icon: const Icon(Icons.replay),
                   label: const Text('Replay'),
                 ),

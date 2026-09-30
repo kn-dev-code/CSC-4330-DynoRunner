@@ -48,6 +48,20 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
   /// Caves currently on screen.
   Iterable<Cave> get caves => _active.whereType<Cave>();
 
+  /// Returns every active obstacle to its pool for a fresh run.
+  void reset() {
+    for (final obstacle in _active.toList()) {
+      switch (obstacle) {
+        case final CollidableSprite wall:
+          _recycle(wall);
+        case final Cave cave:
+          _recycleCave(cave);
+      }
+    }
+    _spawnTimer = 0;
+    _scheduleNextSpawn(initial: true);
+  }
+
   @override
   Future<void> onLoad() async {
     final pool = <CollidableSprite>[];

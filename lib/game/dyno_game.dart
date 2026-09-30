@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
@@ -14,9 +16,19 @@ enum GameState { intro, playing, gameOver }
 
 class DynoGame extends FlameGame
     with HasCollisionDetection, TapCallbacks, KeyboardEvents {
-  DynoGame({this.startImmediately = false});
+  DynoGame({
+    this.startImmediately = false,
+    this.onRunStarted,
+    this.onRunEnded,
+    this.onJump,
+    this.onHit,
+  });
 
   final bool startImmediately;
+  final VoidCallback? onRunStarted;
+  final VoidCallback? onRunEnded;
+  final VoidCallback? onJump;
+  final VoidCallback? onHit;
   GameState state = GameState.intro;
 
   late final Background background;
@@ -84,9 +96,11 @@ class DynoGame extends FlameGame
     _runSeconds = 0;
     distanceMeters = 0;
     money = 0;
+    mapGenerator.reset();
     player.resetToGround();
     state = GameState.playing;
     hideOverlay('gameOver');
+    onRunStarted?.call();
   }
 
   void endRun() {
@@ -94,7 +108,15 @@ class DynoGame extends FlameGame
       return;
     }
     state = GameState.gameOver;
-    showOverlay('gameOver');
+    unawaited(_showGameOverAfterImpact());
+  }
+
+  Future<void> _showGameOverAfterImpact() async {
+    await Future<void>.delayed(const Duration(seconds: 2));
+    if (state == GameState.gameOver) {
+      showOverlay('gameOver');
+      onRunEnded?.call();
+    }
   }
 
   @override

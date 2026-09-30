@@ -21,6 +21,7 @@ void main() {
   testWidgets('title screen starts a game', (tester) async {
     await tester.pumpWidget(const DynoRunnerApp());
     await tester.tap(find.text('Start game'));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byType(GameWidget<DynoGame>), findsOneWidget);

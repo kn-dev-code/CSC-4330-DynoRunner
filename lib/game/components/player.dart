@@ -39,6 +39,7 @@ class Player extends CollidableSprite with HasGameReference<DynoGame> {
 
     _velocityY = GameConfig.jumpVelocity;
     onGround = false;
+    game.onJump?.call();
     unawaited(_setPose(GameSprite.dinoJump));
   }
 
@@ -87,6 +88,7 @@ class Player extends CollidableSprite with HasGameReference<DynoGame> {
   ) {
     super.onCollisionStart(intersectionPoints, other);
     if (other is CollidableSprite && !other.artwork.isPlayer) {
+      game.onHit?.call();
       game.endRun();
     }
   }

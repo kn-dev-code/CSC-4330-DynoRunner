@@ -23,6 +23,57 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('MapGenerator', () {
+    test('speed grows, caps, freezes on loss and resets on restart', () async {
+      final game = await _loadGame();
+      game.mapGenerator.removeFromParent();
+      await game.ready();
+      expect(game.currentScrollSpeed, GameConfig.scrollSpeed);
+      for (var i = 0; i < 600; i++) {
+        game.update(1 / 60);
+      }
+      expect(game.currentScrollSpeed, closeTo(320, 0.001));
+      expect(game.distanceMeters, greaterThan(28));
+      game.endRun();
+      final speedAtLoss = game.currentScrollSpeed;
+      game.update(10);
+      expect(game.currentScrollSpeed, speedAtLoss);
+      game.startRun();
+      expect(game.currentScrollSpeed, GameConfig.scrollSpeed);
+      expect(game.distanceMeters, 0);
+      for (var i = 0; i < 100; i++) {
+        game.update(1);
+      }
+      expect(game.currentScrollSpeed, GameConfig.maxScrollSpeed);
+      game.onRemove();
+    });
+
+    test('scenery scrolls at the increased run speed', () async {
+      final game = await _loadGame();
+      game.mapGenerator.removeFromParent();
+      await game.ready();
+      game.update(10);
+      final generator = MapGenerator(
+        groundY: 510,
+        minSpawnInterval: 0,
+        maxSpawnInterval: 0,
+        caveChance: 0,
+      );
+      await game.world.add(generator);
+      await game.ready();
+      game.update(0);
+      final wall = generator.obstacles.first;
+      final x = wall.position.x;
+      final speed = game.currentScrollSpeed;
+      final distance = game.distanceMeters;
+      game.update(0.1);
+      expect(x - wall.position.x, closeTo(speed * 0.1, 0.001));
+      expect(
+        game.distanceMeters - distance,
+        closeTo(speed * 0.1 / GameConfig.pixelsPerMeter, 0.001),
+      );
+      game.onRemove();
+    });
+
     for (final caveChance in [0.0, 1.0]) {
       test('freezes scenery after losing (caves: $caveChance)', () async {
         final game = await _loadGame();

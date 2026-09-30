@@ -99,7 +99,7 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
   }
 
   void _scrollObstacles(double dt) {
-    final delta = scrollSpeed * dt;
+    final delta = scrollSpeed * game.speedMultiplier * dt;
 
     for (final obstacle in _active.toList()) {
       obstacle.position.x -= delta;

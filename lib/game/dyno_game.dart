@@ -23,6 +23,13 @@ class DynoGame extends FlameGame
   String playerName = 'Runner';
   double distanceMeters = 0;
   double money = 0;
+  double _runSeconds = 0;
+
+  double get currentScrollSpeed =>
+      (GameConfig.scrollSpeed + _runSeconds * GameConfig.speedIncreasePerSecond)
+          .clamp(GameConfig.scrollSpeed, GameConfig.maxScrollSpeed);
+
+  double get speedMultiplier => currentScrollSpeed / GameConfig.scrollSpeed;
 
   /// Bumps when gameplay stats change so Flutter overlays can rebuild.
   final refreshNotifier = ValueNotifier<int>(0);
@@ -68,6 +75,7 @@ class DynoGame extends FlameGame
   }
 
   void startRun() {
+    _runSeconds = 0;
     distanceMeters = 0;
     money = 0;
     player.resetToGround();
@@ -90,7 +98,8 @@ class DynoGame extends FlameGame
       return;
     }
 
-    distanceMeters += GameConfig.scrollSpeed * dt / GameConfig.pixelsPerMeter;
+    distanceMeters += currentScrollSpeed * dt / GameConfig.pixelsPerMeter;
+    _runSeconds += dt;
     money = distanceMeters * GameConfig.moneyPerMeter;
     refreshNotifier.value++;
   }

@@ -20,6 +20,37 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Player', () {
+    for (final fps in [30, 60, 120]) {
+      for (final artwork in [GameSprite.wallShort, GameSprite.wallTall]) {
+        test('clears $artwork and lands at $fps fps', () async {
+          final game = await _loadGame();
+          game.mapGenerator.removeFromParent();
+          final player = game.player;
+          final wall = CollidableSprite(
+            artwork: artwork,
+            position: Vector2(
+              GameConfig.playerX + 190,
+              player.groundY - artwork.height,
+            ),
+          );
+          await game.world.add(wall);
+          await game.ready();
+          player.jump();
+          var maxHeight = 0.0;
+          for (var frame = 0; frame < fps * 1.5; frame++) {
+            wall.position.x -= GameConfig.scrollSpeed / fps;
+            game.update(1 / fps);
+            final height = player.groundY - player.position.y;
+            if (height > maxHeight) maxHeight = height;
+            expect(game.state, GameState.playing);
+          }
+          expect(maxHeight, greaterThan(GameSprite.wallTall.height + 30));
+          expect(player.onGround, isTrue);
+          game.onRemove();
+        });
+      }
+    }
+
     test('jump leaves the ground and returns on landing', () async {
       final game = await _loadGame();
       final player = game.player;

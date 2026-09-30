@@ -23,6 +23,38 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('MapGenerator', () {
+    for (final caveChance in [0.0, 1.0]) {
+      test('freezes scenery after losing (caves: $caveChance)', () async {
+        final game = await _loadGame();
+        final generator = MapGenerator(
+          groundY: 510,
+          minSpawnInterval: 0,
+          maxSpawnInterval: 0,
+          caveChance: caveChance,
+          random: Random(0),
+        );
+        await game.world.add(generator);
+        await game.ready();
+        game.update(0);
+        final scenery = <PositionComponent>[
+          ...generator.obstacles,
+          ...generator.caves,
+        ];
+        expect(scenery, hasLength(1));
+        final startX = scenery.single.position.x;
+        game.endRun();
+        for (var frame = 0; frame < 120; frame++) {
+          game.update(1 / 60);
+        }
+        expect(scenery.single.position.x, startX);
+        expect(generator.obstacles.length + generator.caves.length, 1);
+        game.startRun();
+        game.update(1 / 60);
+        expect(scenery.single.position.x, lessThan(startX));
+        game.onRemove();
+      });
+    }
+
     test('does not spawn obstacles while the game is not playing', () async {
       final game = await _loadGame();
       game.state = GameState.intro;

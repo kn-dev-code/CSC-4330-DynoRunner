@@ -4,7 +4,7 @@ import 'package:flame/components.dart';
 class GameConfig {
   GameConfig._();
 
-  static const scrollSpeed = 200.0;
+  static const scrollSpeed = 280.0;
   static const minSpawnInterval = 1.5;
   static const maxSpawnInterval = 3.0;
   static const minObstacleGap = 150.0;
@@ -13,7 +13,8 @@ class GameConfig {
 
   static const playerX = 50.0;
   static const gravity = 1200.0;
-  static const jumpVelocity = -450.0;
+  // About 204px of jump height, enough to clear the 132px tall wall.
+  static const jumpVelocity = -700.0;
   static const runFrameDuration = 0.1;
 
   /// Scroll speed is treated as pixels per second; divide by this for meters.

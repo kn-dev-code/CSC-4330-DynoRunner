@@ -86,6 +86,9 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
 
   @override
   void update(double dt) {
+    if (game.state == GameState.gameOver) {
+      return;
+    }
     _scrollObstacles(dt);
 
     if (game.state != GameState.playing) {

@@ -33,6 +33,7 @@ class DynoRunnerApp extends StatelessWidget {
         '/game': (_) => const GameScreen(),
         '/leaderboard': (_) => const LeaderboardScreen(),
         '/sound-settings': (_) => const SoundSettingsScreen(),
+        '/shop': (_) => const ShopScreen(),
       },
       navigatorObservers: [routeObserver],
       initialRoute: '/',
@@ -105,59 +106,73 @@ class _TitleScreenState extends State<TitleScreen> with RouteAware {
               constraints: const BoxConstraints(maxWidth: 360),
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Icon(
-                      Icons.directions_run,
-                      size: 72,
-                      color: Colors.white,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Tap anywhere to enable music',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'DYNO RUN',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 36,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 2,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Image.asset(
+                        'assets/images/dino_run_1.png',
+                        height: 80,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.none,
+                        semanticLabel: 'Dinosaur',
                       ),
-                    ),
-                    const SizedBox(height: 40),
-                    FilledButton.icon(
-                      onPressed: () {
-                        unawaited(GameAudio.playGameMusic());
-                        Navigator.of(context).pushNamed('/game');
-                      },
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Start game'),
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: () =>
-                          Navigator.of(context).pushNamed('/leaderboard'),
-                      icon: const Icon(Icons.leaderboard),
-                      label: const Text('Leaderboard'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Tap anywhere to enable music',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white70),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: () =>
-                          Navigator.of(context).pushNamed('/sound-settings'),
-                      icon: const Icon(Icons.volume_up),
-                      label: const Text('Sound settings'),
-                    ),
-                  ],
+                      const SizedBox(height: 16),
+                      const Text(
+                        'DYNO RUN',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 36,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 40),
+                      FilledButton.icon(
+                        onPressed: () {
+                          unawaited(GameAudio.playGameMusic());
+                          Navigator.of(context).pushNamed('/game');
+                        },
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Start game'),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed('/leaderboard'),
+                        icon: const Icon(Icons.leaderboard),
+                        label: const Text('Leaderboard'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed('/shop'),
+                        icon: const Icon(Icons.storefront),
+                        label: const Text('Shop'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed('/sound-settings'),
+                        icon: const Icon(Icons.volume_up),
+                        label: const Text('Sound settings'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -168,15 +183,25 @@ class _TitleScreenState extends State<TitleScreen> with RouteAware {
   }
 }
 
+class ShopScreen extends StatelessWidget {
+  const ShopScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Shop')),
+      body: const SizedBox.expand(),
+    );
+  }
+}
+
 class GameScreen extends StatelessWidget {
   const GameScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dyno Run'),
-      ),
+      appBar: AppBar(title: const Text('Dyno Run')),
       body: GameWidget<DynoGame>.controlled(
         gameFactory: () => DynoGame(
           startImmediately: true,

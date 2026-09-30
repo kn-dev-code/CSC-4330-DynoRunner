@@ -14,6 +14,16 @@ import 'game_config.dart';
 
 enum GameState { intro, playing, gameOver }
 
+/// What the player ran into to end the run.
+enum CrashCause {
+  wall('You crashed into a wall.'),
+  cave('You hit your head on a cave ceiling.');
+
+  const CrashCause(this.message);
+
+  final String message;
+}
+
 class DynoGame extends FlameGame
     with HasCollisionDetection, TapCallbacks, KeyboardEvents {
   DynoGame({
@@ -39,6 +49,9 @@ class DynoGame extends FlameGame
   double distanceMeters = 0;
   double money = 0;
   double _runSeconds = 0;
+
+  /// Why the last run ended, or null while a run is in progress.
+  CrashCause? crashCause;
 
   double get currentScrollSpeed =>
       (GameConfig.scrollSpeed + _runSeconds * GameConfig.speedIncreasePerSecond)
@@ -96,6 +109,7 @@ class DynoGame extends FlameGame
     _runSeconds = 0;
     distanceMeters = 0;
     money = 0;
+    crashCause = null;
     mapGenerator.reset();
     player.resetToGround();
     state = GameState.playing;
@@ -103,11 +117,12 @@ class DynoGame extends FlameGame
     onRunStarted?.call();
   }
 
-  void endRun() {
+  void endRun({CrashCause? cause}) {
     if (state != GameState.playing) {
       return;
     }
     state = GameState.gameOver;
+    crashCause = cause;
     unawaited(_showGameOverAfterImpact());
   }
 

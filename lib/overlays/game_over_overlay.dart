@@ -89,6 +89,13 @@ class _GameOverOverlayState extends State<GameOverOverlay> {
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
+                if (widget.game.crashCause != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.game.crashCause!.message,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Text(
                   'Distance: ${widget.game.distanceMeters.toStringAsFixed(1)} m',

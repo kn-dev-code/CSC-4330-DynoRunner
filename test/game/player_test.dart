@@ -1,3 +1,4 @@
+import 'package:dyno_app/game/components/cave.dart';
 import 'package:dyno_app/game/components/collidable_sprite.dart';
 import 'package:dyno_app/game/components/player.dart';
 import 'package:dyno_app/game/dyno_game.dart';
@@ -100,6 +101,65 @@ void main() {
       game.update(0);
 
       expect(game.state, GameState.gameOver);
+      expect(game.crashCause, CrashCause.wall);
+      game.onRemove();
+    });
+
+    test('jumping into a cave ceiling ends the run', () async {
+      final game = await _loadGame();
+      game.mapGenerator.removeFromParent();
+      final player = game.player;
+      final cave = Cave(groundY: player.groundY, columns: 3)
+        ..position = Vector2(GameConfig.playerX, 0);
+      await game.world.add(cave);
+      await game.ready();
+
+      game.update(0);
+      expect(game.state, GameState.playing);
+
+      player.jump();
+      for (
+        var frame = 0;
+        frame < 60 && game.state == GameState.playing;
+        frame++
+      ) {
+        game.update(1 / 60);
+      }
+
+      expect(game.state, GameState.gameOver);
+      expect(game.crashCause, CrashCause.cave);
+      game.onRemove();
+    });
+
+    test('running into the front of a cave mid-jump ends the run', () async {
+      final game = await _loadGame();
+      game.mapGenerator.removeFromParent();
+      final player = game.player;
+      final cave = Cave(groundY: player.groundY, columns: 3)
+        ..position = Vector2(GameConfig.playerX + 200, 0);
+      await game.world.add(cave);
+      await game.ready();
+
+      player.jump();
+      for (var frame = 0; frame < 20; frame++) {
+        game.update(1 / 60);
+      }
+      // Peak of the jump: slide the cave's front face into the dinosaur.
+      cave.position.x = GameConfig.playerX + 40;
+      game.update(0);
+
+      expect(game.state, GameState.gameOver);
+      expect(game.crashCause, CrashCause.cave);
+      game.onRemove();
+    });
+
+    test('restarting clears the crash cause', () async {
+      final game = await _loadGame();
+      game.endRun(cause: CrashCause.wall);
+      game.startRun();
+
+      expect(game.state, GameState.playing);
+      expect(game.crashCause, isNull);
       game.onRemove();
     });
   });

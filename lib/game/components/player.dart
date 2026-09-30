@@ -5,6 +5,7 @@ import 'package:flame/components.dart';
 
 import '../dyno_game.dart';
 import '../game_config.dart';
+import 'cave.dart';
 import 'collidable_sprite.dart';
 
 /// The controllable dinosaur: run animation on the ground, jump arc, wall hits.
@@ -88,8 +89,13 @@ class Player extends CollidableSprite with HasGameReference<DynoGame> {
   ) {
     super.onCollisionStart(intersectionPoints, other);
     if (other is CollidableSprite && !other.artwork.isPlayer) {
+      if (game.state != GameState.playing) {
+        return;
+      }
       game.onHit?.call();
-      game.endRun();
+      game.endRun(
+        cause: other.parent is Cave ? CrashCause.cave : CrashCause.wall,
+      );
     }
   }
 

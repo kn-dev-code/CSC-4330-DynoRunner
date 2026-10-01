@@ -38,9 +38,16 @@ class HudOverlay extends StatelessWidget {
                       fontSize: 16,
                     ),
                   ),
+                  Text(
+                    'Wallet: \$${game.wallet.balance.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Color(0xFF535353),
+                      fontSize: 16,
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Tap / Space / ↑ to jump',
+                    'Tap / Space / ↑ to jump • P / Esc to pause',
                     style: TextStyle(color: Color(0xFF888888), fontSize: 14),
                   ),
                 ],

@@ -105,6 +105,10 @@ class _GameOverOverlayState extends State<GameOverOverlay> {
                   'Money: \$${widget.game.money.toStringAsFixed(2)}',
                   textAlign: TextAlign.center,
                 ),
+                Text(
+                  'Wallet: \$${widget.game.wallet.balance.toStringAsFixed(2)}',
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _nameController,

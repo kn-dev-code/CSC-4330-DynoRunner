@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'game/dyno_game.dart';
 import 'overlays/overlays.dart';
 import 'services/game_audio.dart';
+import 'services/player_wallet.dart';
 import 'services/sound_settings.dart';
 
 final routeObserver = RouteObserver<ModalRoute<dynamic>>();
@@ -13,6 +14,7 @@ final routeObserver = RouteObserver<ModalRoute<dynamic>>();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SoundSettings.instance.load();
+  await PlayerWallet.instance.load();
   await GameAudio.initialize();
   runApp(const DynoRunnerApp());
 }
@@ -190,7 +192,15 @@ class ShopScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Shop')),
-      body: const SizedBox.expand(),
+      body: Center(
+        child: AnimatedBuilder(
+          animation: PlayerWallet.instance,
+          builder: (context, _) => Text(
+            'Available money: \$${PlayerWallet.instance.balance.toStringAsFixed(2)}',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -213,6 +223,7 @@ class GameScreen extends StatelessWidget {
         overlayBuilderMap: {
           'hud': (context, game) => HudOverlay(game: game),
           'gameOver': (context, game) => GameOverOverlay(game: game),
+          'pause': (context, game) => PauseOverlay(game: game),
         },
         initialActiveOverlays: const ['hud'],
       ),

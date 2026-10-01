@@ -7,12 +7,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../services/player_wallet.dart';
 import 'components/background.dart';
 import 'components/map_generator.dart';
 import 'components/player.dart';
 import 'game_config.dart';
 
-enum GameState { intro, playing, gameOver }
+enum GameState { intro, playing, paused, gameOver }
 
 /// What the player ran into to end the run.
 enum CrashCause {
@@ -32,13 +33,15 @@ class DynoGame extends FlameGame
     this.onRunEnded,
     this.onJump,
     this.onHit,
-  });
+    PlayerWallet? wallet,
+  }) : wallet = wallet ?? PlayerWallet.instance;
 
   final bool startImmediately;
   final VoidCallback? onRunStarted;
   final VoidCallback? onRunEnded;
   final VoidCallback? onJump;
   final VoidCallback? onHit;
+  final PlayerWallet wallet;
   GameState state = GameState.intro;
 
   late final Background background;
@@ -114,6 +117,8 @@ class DynoGame extends FlameGame
     player.resetToGround();
     state = GameState.playing;
     hideOverlay('gameOver');
+    hideOverlay('pause');
+    refreshNotifier.value++;
     onRunStarted?.call();
   }
 
@@ -123,7 +128,22 @@ class DynoGame extends FlameGame
     }
     state = GameState.gameOver;
     crashCause = cause;
+    wallet.add(money);
     unawaited(_showGameOverAfterImpact());
+  }
+
+  void pauseRun() {
+    if (state != GameState.playing) return;
+    state = GameState.paused;
+    showOverlay('pause');
+    refreshNotifier.value++;
+  }
+
+  void resumeRun() {
+    if (state != GameState.paused) return;
+    state = GameState.playing;
+    hideOverlay('pause');
+    refreshNotifier.value++;
   }
 
   Future<void> _showGameOverAfterImpact() async {
@@ -136,10 +156,10 @@ class DynoGame extends FlameGame
 
   @override
   void update(double dt) {
-    super.update(dt);
     if (state != GameState.playing) {
       return;
     }
+    super.update(dt);
 
     distanceMeters += currentScrollSpeed * dt / GameConfig.pixelsPerMeter;
     _runSeconds += dt;
@@ -154,6 +174,7 @@ class DynoGame extends FlameGame
         startRun();
       case GameState.playing:
         player.jump();
+      case GameState.paused:
       case GameState.gameOver:
         break;
     }
@@ -169,14 +190,26 @@ class DynoGame extends FlameGame
     }
 
     final jumpPressed =
-        keysPressed.contains(LogicalKeyboardKey.space) ||
-        keysPressed.contains(LogicalKeyboardKey.arrowUp);
+        event.logicalKey == LogicalKeyboardKey.space ||
+        event.logicalKey == LogicalKeyboardKey.arrowUp;
 
     if (jumpPressed) {
       if (state == GameState.intro) {
         startRun();
       } else if (state == GameState.playing) {
         player.jump();
+      }
+      return KeyEventResult.handled;
+    }
+
+    final pausePressed =
+        event.logicalKey == LogicalKeyboardKey.keyP ||
+        event.logicalKey == LogicalKeyboardKey.escape;
+    if (pausePressed) {
+      if (state == GameState.playing) {
+        pauseRun();
+      } else if (state == GameState.paused) {
+        resumeRun();
       }
       return KeyEventResult.handled;
     }

@@ -7,14 +7,27 @@ class SoundSettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final settings = SoundSettings.instance;
     return Scaffold(
       appBar: AppBar(title: const Text('Sound settings')),
-      body: AnimatedBuilder(
-        animation: settings,
-        builder: (context, _) => ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: const [SoundSettingsControls()],
+      ),
+    );
+  }
+}
+
+class SoundSettingsControls extends StatelessWidget {
+  const SoundSettingsControls({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = SoundSettings.instance;
+    return AnimatedBuilder(
+      animation: settings,
+      builder: (context, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
             _VolumeSlider(
               label: 'Game Over Volume',
               value: settings.gameOverVolume,
@@ -40,8 +53,7 @@ class SoundSettingsScreen extends StatelessWidget {
               value: settings.gameMusicVolume,
               onChanged: settings.setGameMusicVolume,
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

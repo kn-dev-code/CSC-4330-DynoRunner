@@ -31,6 +31,16 @@ void main() {
       expect(game.state, GameState.gameOver);
     });
 
+    test('can pause and resume an active run', () {
+      final game = DynoGame()..state = GameState.playing;
+
+      game.pauseRun();
+      expect(game.state, GameState.paused);
+
+      game.resumeRun();
+      expect(game.state, GameState.playing);
+    });
+
     test('each instance owns its own state', () {
       final first = DynoGame()..state = GameState.playing;
       final second = DynoGame();
@@ -40,12 +50,13 @@ void main() {
     });
   });
 
-  test('GameState declares intro, playing and gameOver', () {
+  test('GameState declares intro, playing, paused and gameOver', () {
     expect(
       GameState.values,
       orderedEquals(<GameState>[
         GameState.intro,
         GameState.playing,
+        GameState.paused,
         GameState.gameOver,
       ]),
     );

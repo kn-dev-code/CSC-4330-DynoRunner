@@ -45,6 +45,33 @@ class HudOverlay extends StatelessWidget {
                       fontSize: 16,
                     ),
                   ),
+                  if (game.powerUpManager.extraLives > 0)
+                    Text(
+                      'Lives: ${game.powerUpManager.extraLives}',
+                      style: const TextStyle(
+                        color: Color(0xFFC62828),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  if (game.bossEncounterActive)
+                    Text(
+                      'Boss: ${game.bossDirector.activeBossKind?.displayName ?? '…'}',
+                      style: const TextStyle(
+                        color: Color(0xFFB71C1C),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  for (final effect in game.powerUpManager.activeTimedEffects)
+                    Text(
+                      '${effect.key.label} ${effect.value.toStringAsFixed(1)}s',
+                      style: TextStyle(
+                        color: effect.key.color,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   const SizedBox(height: 4),
                   const Text(
                     'Tap / Space / ↑ to jump • P / Esc to pause',

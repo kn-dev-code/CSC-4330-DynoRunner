@@ -4,6 +4,7 @@ import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 
 import '../dyno_game.dart';
+import '../powerups/powerup_pickup.dart';
 import '../game_config.dart';
 import 'cave.dart';
 import 'collidable_sprite.dart';
@@ -61,7 +62,7 @@ class Player extends CollidableSprite with HasGameReference<DynoGame> {
     }
 
     if (!onGround) {
-      _velocityY += GameConfig.gravity * dt;
+      _velocityY += GameConfig.gravity * game.powerUpManager.gravityScale * dt;
       position.y += _velocityY * dt;
       if (position.y >= groundY) {
         position.y = groundY;
@@ -88,8 +89,15 @@ class Player extends CollidableSprite with HasGameReference<DynoGame> {
     PositionComponent other,
   ) {
     super.onCollisionStart(intersectionPoints, other);
+    if (other is PowerUpPickup) {
+      other.collect(game);
+      return;
+    }
     if (other is CollidableSprite && !other.artwork.isPlayer) {
       if (game.state != GameState.playing) {
+        return;
+      }
+      if (game.powerUpManager.tryAbsorbHit()) {
         return;
       }
       game.onHit?.call();

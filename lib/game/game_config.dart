@@ -28,6 +28,19 @@ class GameConfig {
   static const minCaveColumns = 3;
   static const maxCaveColumns = 6;
 
+  static const powerUpPoolSize = 4;
+  static const powerUpSpawnInterval = 7.0;
+  static const powerUpSpawnChance = 0.65;
+
+  static const invulnerabilityDuration = 5.0;
+  static const superspeedDuration = 4.0;
+  static const antigravityDuration = 6.0;
+  static const superspeedMultiplier = 1.55;
+  static const antigravityScale = 0.4;
+
+  static const bossIntervalMeters = 250.0;
+  static const bossMoneyBonus = 50.0;
+
   /// Open space between the ground and a cave ceiling. The running dinosaur
   /// is 80px tall, so this leaves headroom without needing to jump.
   static const caveClearance = 110.0;

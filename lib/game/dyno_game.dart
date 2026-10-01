@@ -11,7 +11,10 @@ import '../services/player_wallet.dart';
 import 'components/background.dart';
 import 'components/map_generator.dart';
 import 'components/player.dart';
+import 'bosses/boss_director.dart';
 import 'game_config.dart';
+import 'powerups/powerup_manager.dart';
+import 'powerups/powerup_spawner.dart';
 
 enum GameState { intro, playing, paused, gameOver }
 
@@ -47,6 +50,9 @@ class DynoGame extends FlameGame
   late final Background background;
   late final MapGenerator mapGenerator;
   late final Player player;
+  late final PowerUpManager powerUpManager;
+  late final PowerUpSpawner powerUpSpawner;
+  late final BossDirector bossDirector;
 
   String playerName = 'Runner';
   double distanceMeters = 0;
@@ -56,9 +62,14 @@ class DynoGame extends FlameGame
   /// Why the last run ended, or null while a run is in progress.
   CrashCause? crashCause;
 
-  double get currentScrollSpeed =>
-      (GameConfig.scrollSpeed + _runSeconds * GameConfig.speedIncreasePerSecond)
-          .clamp(GameConfig.scrollSpeed, GameConfig.maxScrollSpeed);
+  double get currentScrollSpeed {
+    final ramp =
+        (GameConfig.scrollSpeed + _runSeconds * GameConfig.speedIncreasePerSecond)
+            .clamp(GameConfig.scrollSpeed, GameConfig.maxScrollSpeed);
+    return ramp * powerUpManager.scrollSpeedMultiplier;
+  }
+
+  bool get bossEncounterActive => bossDirector.isEngaged;
 
   double get speedMultiplier => currentScrollSpeed / GameConfig.scrollSpeed;
 
@@ -92,8 +103,18 @@ class DynoGame extends FlameGame
       groundY: _groundY,
       position: Vector2(GameConfig.playerX, _groundY),
     );
+    powerUpManager = PowerUpManager();
+    powerUpSpawner = PowerUpSpawner(groundY: _groundY);
+    bossDirector = BossDirector(groundY: _groundY);
 
-    await world.addAll([background, mapGenerator, player]);
+    await world.addAll([
+      background,
+      mapGenerator,
+      player,
+      powerUpManager,
+      powerUpSpawner,
+      bossDirector,
+    ]);
   }
 
   void showOverlay(String name) {
@@ -114,6 +135,9 @@ class DynoGame extends FlameGame
     money = 0;
     crashCause = null;
     mapGenerator.reset();
+    powerUpManager.reset();
+    powerUpSpawner.reset();
+    bossDirector.reset();
     player.resetToGround();
     state = GameState.playing;
     hideOverlay('gameOver');

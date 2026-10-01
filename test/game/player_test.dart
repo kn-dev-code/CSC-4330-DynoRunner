@@ -3,6 +3,7 @@ import 'package:dyno_app/game/components/collidable_sprite.dart';
 import 'package:dyno_app/game/components/player.dart';
 import 'package:dyno_app/game/dyno_game.dart';
 import 'package:dyno_app/game/game_config.dart';
+import 'package:dyno_app/game/powerups/powerup_type.dart';
 import 'package:flame/components.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -82,6 +83,24 @@ void main() {
       game.update(1 / 120);
 
       expect(player.position.y, lessThanOrEqualTo(peakY));
+      game.onRemove();
+    });
+
+    test('invulnerability prevents a crash', () async {
+      final game = await _loadGame();
+      game.powerUpManager.apply(PowerUpType.invulnerability);
+      final groundY = game.player.groundY;
+      final wall = CollidableSprite(
+        artwork: GameSprite.wallShort,
+        position: Vector2(
+          GameConfig.playerX + 10,
+          groundY - GameSprite.wallShort.height,
+        ),
+      );
+      await game.world.add(wall);
+      await game.ready();
+      game.update(0);
+      expect(game.state, GameState.playing);
       game.onRemove();
     });
 

@@ -129,6 +129,10 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
   }
 
   void _updateSpawning(double dt, double gameWidth) {
+    if (game.bossEncounterActive) {
+      return;
+    }
+
     _spawnTimer += dt;
     if (_spawnTimer < _nextSpawnIn || !_hasRoomForSpawn(gameWidth)) {
       return;

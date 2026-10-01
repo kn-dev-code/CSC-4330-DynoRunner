@@ -185,26 +185,6 @@ class _TitleScreenState extends State<TitleScreen> with RouteAware {
   }
 }
 
-class ShopScreen extends StatelessWidget {
-  const ShopScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Shop')),
-      body: Center(
-        child: AnimatedBuilder(
-          animation: PlayerWallet.instance,
-          builder: (context, _) => Text(
-            'Available money: \$${PlayerWallet.instance.balance.toStringAsFixed(2)}',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class GameScreen extends StatelessWidget {
   const GameScreen({super.key});
 
@@ -215,6 +195,7 @@ class GameScreen extends StatelessWidget {
       body: GameWidget<DynoGame>.controlled(
         gameFactory: () => DynoGame(
           startImmediately: true,
+          runModifiers: playerUpgradesService.cachedModifiers,
           onRunStarted: () => unawaited(GameAudio.playGameMusic()),
           onRunEnded: () => unawaited(GameAudio.playGameOver()),
           onJump: () => unawaited(GameAudio.playJump()),

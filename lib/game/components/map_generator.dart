@@ -6,13 +6,11 @@ import '../dyno_game.dart';
 import '../game_config.dart';
 import 'cave.dart';
 import 'collidable_sprite.dart';
+import 'obstacles/moving_wall.dart';
+import 'obstacles/patrol_enemy.dart';
+import 'obstacles/pitfall.dart';
 
 /// Spawns and scrolls obstacles from right to left across the playfield.
-///
-/// Each spawn is either a short or tall ground wall, or a [Cave] ceiling the
-/// player runs underneath. Everything is pre-loaded into a pool during
-/// [onLoad] so new pieces can be activated during [update] without
-/// enqueueing lifecycle events mid-frame.
 class MapGenerator extends Component with HasGameReference<DynoGame> {
   MapGenerator({
     required this.groundY,
@@ -22,6 +20,9 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
     this.minGap = GameConfig.minObstacleGap,
     this.poolSize = 5,
     this.caveChance = GameConfig.caveChance,
+    this.pitfallChance = GameConfig.pitfallSpawnChance,
+    this.movingWallChance = GameConfig.movingWallSpawnChance,
+    this.enemyChance = GameConfig.enemySpawnChance,
     Random? random,
   }) : _random = random ?? Random();
 
@@ -32,31 +33,29 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
   final double minGap;
   final int poolSize;
   final double caveChance;
+  final double pitfallChance;
+  final double movingWallChance;
+  final double enemyChance;
 
   final Random _random;
   final List<PositionComponent> _active = [];
   late final List<CollidableSprite> _inactive;
   late final List<Cave> _inactiveCaves;
+  late final List<Pitfall> _inactivePits;
+  late final List<MovingWall> _inactiveMoving;
+  late final List<PatrolEnemy> _inactiveEnemies;
 
   double _spawnTimer = 0;
   double _nextSpawnIn = 0;
 
-  /// Ground walls currently on screen.
   Iterable<CollidableSprite> get obstacles =>
       _active.whereType<CollidableSprite>();
 
-  /// Caves currently on screen.
   Iterable<Cave> get caves => _active.whereType<Cave>();
 
-  /// Returns every active obstacle to its pool for a fresh run.
   void reset() {
     for (final obstacle in _active.toList()) {
-      switch (obstacle) {
-        case final CollidableSprite wall:
-          _recycle(wall);
-        case final Cave cave:
-          _recycleCave(cave);
-      }
+      _recycle(obstacle);
     }
     _spawnTimer = 0;
     _scheduleNextSpawn(initial: true);
@@ -95,6 +94,33 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
       caves.add(cave);
     }
     _inactiveCaves = caves;
+
+    _inactivePits = [];
+    for (var index = 0; index < GameConfig.pitfallPoolSize; index++) {
+      final pit = Pitfall(
+        groundY: groundY,
+        width: GameConfig.pitfallWidth,
+      )..position = Vector2(-GameConfig.offscreenX, groundY);
+      await add(pit);
+      _inactivePits.add(pit);
+    }
+
+    _inactiveMoving = [];
+    for (var index = 0; index < GameConfig.movingWallPoolSize; index++) {
+      final wall = MovingWall(groundY: groundY)
+        ..position = Vector2(-GameConfig.offscreenX, groundY);
+      await add(wall);
+      _inactiveMoving.add(wall);
+    }
+
+    _inactiveEnemies = [];
+    for (var index = 0; index < GameConfig.enemyPoolSize; index++) {
+      final enemy = PatrolEnemy(groundY: groundY)
+        ..position = Vector2(-GameConfig.offscreenX, groundY);
+      await add(enemy);
+      _inactiveEnemies.add(enemy);
+    }
+
     _scheduleNextSpawn(initial: true);
   }
 
@@ -118,12 +144,7 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
     for (final obstacle in _active.toList()) {
       obstacle.position.x -= delta;
       if (obstacle.position.x + obstacle.size.x < 0) {
-        switch (obstacle) {
-          case final CollidableSprite wall:
-            _recycle(wall);
-          case final Cave cave:
-            _recycleCave(cave);
-        }
+        _recycle(obstacle);
       }
     }
   }
@@ -156,6 +177,27 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
   }
 
   void _spawnObstacle(double gameWidth) {
+    final roll = _random.nextDouble();
+    var cursor = 0.0;
+
+    cursor += pitfallChance;
+    if (roll < cursor && _inactivePits.isNotEmpty) {
+      _spawnPit(gameWidth);
+      return;
+    }
+
+    cursor += movingWallChance;
+    if (roll < cursor && _inactiveMoving.isNotEmpty) {
+      _spawnMovingWall(gameWidth);
+      return;
+    }
+
+    cursor += enemyChance;
+    if (roll < cursor && _inactiveEnemies.isNotEmpty) {
+      _spawnEnemy(gameWidth);
+      return;
+    }
+
     if (caveChance > 0 &&
         _inactiveCaves.isNotEmpty &&
         _random.nextDouble() < caveChance) {
@@ -182,6 +224,31 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
     _active.add(obstacle);
   }
 
+  void _spawnPit(double gameWidth) {
+    final pit = _inactivePits.removeAt(_random.nextInt(_inactivePits.length));
+    pit.position = Vector2(gameWidth + GameConfig.spawnMargin, groundY);
+    _active.add(pit);
+  }
+
+  void _spawnMovingWall(double gameWidth) {
+    final wall = _inactiveMoving.removeAt(
+      _random.nextInt(_inactiveMoving.length),
+    );
+    wall.position = Vector2(gameWidth + GameConfig.spawnMargin, groundY);
+    _active.add(wall);
+  }
+
+  void _spawnEnemy(double gameWidth) {
+    final enemy = _inactiveEnemies.removeAt(
+      _random.nextInt(_inactiveEnemies.length),
+    );
+    enemy.position = Vector2(
+      gameWidth + GameConfig.spawnMargin,
+      groundY - enemy.size.y,
+    );
+    _active.add(enemy);
+  }
+
   CollidableSprite? _takeFromPool(GameSprite artwork) {
     for (var index = 0; index < _inactive.length; index++) {
       final obstacle = _inactive[index];
@@ -193,19 +260,30 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
     return null;
   }
 
-  void _recycle(CollidableSprite obstacle) {
+  void _recycle(PositionComponent obstacle) {
     _active.remove(obstacle);
-    obstacle.position = Vector2(
-      -GameConfig.offscreenX,
-      groundY - obstacle.artwork.height,
-    );
-    _inactive.add(obstacle);
-  }
-
-  void _recycleCave(Cave cave) {
-    _active.remove(cave);
-    cave.position.x = -GameConfig.offscreenX - cave.size.x;
-    _inactiveCaves.add(cave);
+    switch (obstacle) {
+      case final CollidableSprite wall:
+        wall.position = Vector2(
+          -GameConfig.offscreenX,
+          groundY - wall.artwork.height,
+        );
+        _inactive.add(wall);
+      case final Cave cave:
+        cave.position.x = -GameConfig.offscreenX - cave.size.x;
+        _inactiveCaves.add(cave);
+      case final Pitfall pit:
+        pit.position = Vector2(-GameConfig.offscreenX, groundY);
+        _inactivePits.add(pit);
+      case final MovingWall wall:
+        wall.position = Vector2(-GameConfig.offscreenX, groundY);
+        _inactiveMoving.add(wall);
+      case final PatrolEnemy enemy:
+        enemy.position = Vector2(-GameConfig.offscreenX, groundY - enemy.size.y);
+        _inactiveEnemies.add(enemy);
+      default:
+        break;
+    }
   }
 
   void _scheduleNextSpawn({bool initial = false}) {

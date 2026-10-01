@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/player_wallet.dart';
+import '../services/upgrade_catalog.dart';
 import 'components/background.dart';
 import 'components/map_generator.dart';
 import 'components/player.dart';
@@ -15,13 +16,16 @@ import 'bosses/boss_director.dart';
 import 'game_config.dart';
 import 'powerups/powerup_manager.dart';
 import 'powerups/powerup_spawner.dart';
+import 'powerups/powerup_type.dart';
 
 enum GameState { intro, playing, paused, gameOver }
 
 /// What the player ran into to end the run.
 enum CrashCause {
   wall('You crashed into a wall.'),
-  cave('You hit your head on a cave ceiling.');
+  cave('You hit your head on a cave ceiling.'),
+  pitfall('You fell into a pit.'),
+  enemy('An enemy caught you.');
 
   const CrashCause(this.message);
 
@@ -36,6 +40,7 @@ class DynoGame extends FlameGame
     this.onRunEnded,
     this.onJump,
     this.onHit,
+    this.runModifiers = RunUpgradeModifiers.none,
     PlayerWallet? wallet,
   }) : wallet = wallet ?? PlayerWallet.instance;
 
@@ -44,6 +49,7 @@ class DynoGame extends FlameGame
   final VoidCallback? onRunEnded;
   final VoidCallback? onJump;
   final VoidCallback? onHit;
+  final RunUpgradeModifiers runModifiers;
   final PlayerWallet wallet;
   GameState state = GameState.intro;
 
@@ -77,6 +83,16 @@ class DynoGame extends FlameGame
   final refreshNotifier = ValueNotifier<int>(0);
 
   late final double _groundY;
+  int _pitfallsIgnoredRemaining = 0;
+
+  bool consumePitfallSkip() {
+    if (_pitfallsIgnoredRemaining <= 0) {
+      return false;
+    }
+    _pitfallsIgnoredRemaining--;
+    refreshNotifier.value++;
+    return true;
+  }
 
   @override
   Future<void> onLoad() async {
@@ -138,6 +154,13 @@ class DynoGame extends FlameGame
     powerUpManager.reset();
     powerUpSpawner.reset();
     bossDirector.reset();
+    _pitfallsIgnoredRemaining = runModifiers.pitfallsIgnoredPerRun;
+    if (runModifiers.startInvulnSeconds > 0) {
+      powerUpManager.grantTimed(
+        PowerUpType.invulnerability,
+        runModifiers.startInvulnSeconds,
+      );
+    }
     player.resetToGround();
     state = GameState.playing;
     hideOverlay('gameOver');
@@ -191,7 +214,10 @@ class DynoGame extends FlameGame
 
     distanceMeters += currentScrollSpeed * dt / GameConfig.pixelsPerMeter;
     _runSeconds += dt;
-    money = distanceMeters * GameConfig.moneyPerMeter;
+    money =
+        distanceMeters *
+        GameConfig.moneyPerMeter *
+        runModifiers.moneyMultiplier;
     refreshNotifier.value++;
   }
 

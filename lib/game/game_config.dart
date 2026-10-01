@@ -41,6 +41,17 @@ class GameConfig {
   static const bossIntervalMeters = 250.0;
   static const bossMoneyBonus = 50.0;
 
+  static const pitfallSpawnChance = 0.12;
+  static const movingWallSpawnChance = 0.1;
+  static const enemySpawnChance = 0.08;
+  static const pitfallPoolSize = 3;
+  static const movingWallPoolSize = 3;
+  static const enemyPoolSize = 4;
+  static const pitfallWidth = 96.0;
+  static const movingWallAmplitude = 36.0;
+  static const movingWallFrequency = 2.8;
+  static const enemyChaseSpeed = 90.0;
+
   /// Open space between the ground and a cave ceiling. The running dinosaur
   /// is 80px tall, so this leaves headroom without needing to jump.
   static const caveClearance = 110.0;

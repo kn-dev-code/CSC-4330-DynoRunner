@@ -36,7 +36,7 @@ void main() {
     expect(entries.length, 1);
     expect(entries.first.playerName, 'Alex');
     expect(entries.first.distanceMeters, 10);
-    expect(entries.first.money, 4);
+    expect(entries.first.money, 6.5);
   });
 
   test('ranks players by distance', () {

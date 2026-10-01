@@ -8,6 +8,7 @@ import '../powerups/powerup_pickup.dart';
 import '../game_config.dart';
 import 'cave.dart';
 import 'collidable_sprite.dart';
+import 'player_hazard.dart';
 
 /// The controllable dinosaur: run animation on the ground, jump arc, wall hits.
 class Player extends CollidableSprite with HasGameReference<DynoGame> {
@@ -39,7 +40,7 @@ class Player extends CollidableSprite with HasGameReference<DynoGame> {
       return;
     }
 
-    _velocityY = GameConfig.jumpVelocity;
+    _velocityY = GameConfig.jumpVelocity * game.runModifiers.jumpMultiplier;
     onGround = false;
     game.onJump?.call();
     unawaited(_setPose(GameSprite.dinoJump));
@@ -93,18 +94,51 @@ class Player extends CollidableSprite with HasGameReference<DynoGame> {
       other.collect(game);
       return;
     }
+
+    final hazard = _hazardFrom(other);
+    if (hazard != null) {
+      if (game.state != GameState.playing) {
+        return;
+      }
+      if (hazard.crashCause == CrashCause.pitfall) {
+        if (!onGround) {
+          return;
+        }
+        if (game.consumePitfallSkip()) {
+          return;
+        }
+      }
+      _handleFatal(hazard.crashCause);
+      return;
+    }
+
     if (other is CollidableSprite && !other.artwork.isPlayer) {
       if (game.state != GameState.playing) {
         return;
       }
-      if (game.powerUpManager.tryAbsorbHit()) {
-        return;
-      }
-      game.onHit?.call();
-      game.endRun(
-        cause: other.parent is Cave ? CrashCause.cave : CrashCause.wall,
+      _handleFatal(
+        other.parent is Cave ? CrashCause.cave : CrashCause.wall,
       );
     }
+  }
+
+  PlayerHazard? _hazardFrom(PositionComponent other) {
+    if (other is PlayerHazard) {
+      return other as PlayerHazard;
+    }
+    final parent = other.parent;
+    if (parent is PlayerHazard) {
+      return parent as PlayerHazard;
+    }
+    return null;
+  }
+
+  void _handleFatal(CrashCause cause) {
+    if (game.powerUpManager.tryAbsorbHit()) {
+      return;
+    }
+    game.onHit?.call();
+    game.endRun(cause: cause);
   }
 
   Future<void> _setPose(GameSprite pose) async {

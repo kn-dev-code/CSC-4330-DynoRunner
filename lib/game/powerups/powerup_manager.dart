@@ -43,6 +43,11 @@ class PowerUpManager extends Component with HasGameReference<DynoGame> {
     game.refreshNotifier.value++;
   }
 
+  void grantTimed(PowerUpType type, double seconds) {
+    _remainingSeconds[type] = seconds;
+    game.refreshNotifier.value++;
+  }
+
   /// Returns true if a fatal hit was absorbed (shield or extra life).
   bool tryAbsorbHit() {
     if (isInvulnerable) {

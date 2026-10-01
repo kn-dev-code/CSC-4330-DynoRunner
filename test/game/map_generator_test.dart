@@ -57,6 +57,9 @@ void main() {
         minSpawnInterval: 0,
         maxSpawnInterval: 0,
         caveChance: 0,
+        pitfallChance: 0,
+        movingWallChance: 0,
+        enemyChance: 0,
       );
       await game.world.add(generator);
       await game.ready();

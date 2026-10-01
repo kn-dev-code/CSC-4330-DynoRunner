@@ -20,6 +20,14 @@ Future<void> main(List<String> args) async {
   final router = Router()
     ..get('/leaderboard', (_) => _listHandler(database))
     ..post('/leaderboard', (request) => _submitHandler(request, database))
+    ..get(
+      '/players/<name>/profile',
+      (Request request, String name) => _profileHandler(database, name),
+    )
+    ..post(
+      '/players/<name>/upgrades',
+      (Request request, String name) => _purchaseHandler(request, database, name),
+    )
     ..get('/health', (_) => Response.ok('ok'));
 
   final handler = Pipeline()
@@ -87,6 +95,53 @@ Future<Response> _submitHandler(
       }),
       headers: _jsonHeaders,
     );
+  } on FormatException {
+    return Response(400, body: 'Invalid JSON body', headers: _jsonHeaders);
+  }
+}
+
+Response _profileHandler(LeaderboardDatabase database, String name) {
+  final profile = database.getProfile(name.trim());
+  return Response.ok(
+    jsonEncode({
+      'playerName': profile.playerName,
+      'money': profile.money,
+      'upgrades': profile.upgradeLevels,
+    }),
+    headers: _jsonHeaders,
+  );
+}
+
+Future<Response> _purchaseHandler(
+  Request request,
+  LeaderboardDatabase database,
+  String name,
+) async {
+  try {
+    final body = await request.readAsString();
+    final json = jsonDecode(body) as Map<String, dynamic>;
+    final upgradeId = json['upgradeId'] as String?;
+    if (upgradeId == null || upgradeId.isEmpty) {
+      return Response(400, body: 'upgradeId is required', headers: _jsonHeaders);
+    }
+
+    final profile = database.purchaseUpgrade(
+      playerName: name.trim(),
+      upgradeId: upgradeId,
+    );
+
+    return Response.ok(
+      jsonEncode({
+        'playerName': profile.playerName,
+        'money': profile.money,
+        'upgrades': profile.upgradeLevels,
+      }),
+      headers: _jsonHeaders,
+    );
+  } on StateError catch (error) {
+    return Response(400, body: error.message, headers: _jsonHeaders);
+  } on ArgumentError catch (error) {
+    return Response(400, body: '${error.message}', headers: _jsonHeaders);
   } on FormatException {
     return Response(400, body: 'Invalid JSON body', headers: _jsonHeaders);
   }

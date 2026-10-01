@@ -156,10 +156,14 @@ class DynoGame extends FlameGame
 
   @override
   void update(double dt) {
-    if (state != GameState.playing) {
+    if (state == GameState.paused) {
       return;
     }
     super.update(dt);
+
+    if (state != GameState.playing) {
+      return;
+    }
 
     distanceMeters += currentScrollSpeed * dt / GameConfig.pixelsPerMeter;
     _runSeconds += dt;

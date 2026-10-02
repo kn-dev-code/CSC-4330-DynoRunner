@@ -1,0 +1,18 @@
+# Render Blueprint for the leaderboard server (server/). Data lives in
+# TiDB Cloud, so the service needs no disk. DATABASE_URL is entered in the
+# Render dashboard when the Blueprint is created and never committed.
+services:
+  - type: web
+    name: dyno-leaderboard
+    runtime: docker
+    plan: free
+    # Keep this close to the TiDB Cloud cluster's region; every request makes
+    # several round trips to the database.
+    region: virginia
+    rootDir: server
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false

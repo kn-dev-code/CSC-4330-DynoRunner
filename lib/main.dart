@@ -19,6 +19,7 @@ Future<void> main() async {
   await PlayerWallet.instance.load();
   await PlayerIdentity.instance.load();
   await GameAudio.initialize();
+  unawaited(_wakeServer());
   runApp(const DynoRunnerApp());
 }
 
@@ -233,6 +234,17 @@ Future<String?> _startServerRun() async {
     return await leaderboard.startRun();
   } catch (_) {
     return null;
+  } finally {
+    leaderboard.dispose();
+  }
+}
+
+Future<void> _wakeServer() async {
+  final leaderboard = LeaderboardService();
+  try {
+    await leaderboard.wakeServer();
+  } catch (_) {
+    // Offline play still works; submitting will report the problem.
   } finally {
     leaderboard.dispose();
   }

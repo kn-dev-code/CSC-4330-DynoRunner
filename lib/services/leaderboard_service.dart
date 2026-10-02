@@ -22,6 +22,12 @@ class LeaderboardService {
   Uri get _leaderboardUri => Uri.parse('$_baseUrl/leaderboard');
   Uri get _runsUri => Uri.parse('$_baseUrl/runs');
 
+  /// Hosts like Render's free tier sleep when idle and take up to a minute
+  /// to wake, so this is sent at launch, before a run needs the server.
+  Future<void> wakeServer() async {
+    await _client.get(Uri.parse('$_baseUrl/health'));
+  }
+
   /// Tells the server a run began so it can bound the submitted distance by
   /// the time played. Returns the run id to pass to [submitScore].
   Future<String> startRun() async {

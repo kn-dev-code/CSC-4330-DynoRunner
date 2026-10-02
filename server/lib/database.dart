@@ -1,9 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:mysql_client_plus/mysql_client_plus.dart';
 
 class LeaderboardRow {
   LeaderboardRow({
@@ -42,13 +42,54 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// Where to reach the database, parsed from a URL like
+/// `mysql://user:password@host:4000/database` (the format TiDB Cloud shows).
+class DatabaseConfig {
+  DatabaseConfig({
+    required this.host,
+    required this.port,
+    required this.user,
+    required this.password,
+    required this.database,
+  });
+
+  factory DatabaseConfig.fromUrl(String url) {
+    final uri = Uri.parse(url);
+    if (uri.scheme != 'mysql' || uri.host.isEmpty) {
+      throw FormatException('Expected mysql://user:password@host:port/db');
+    }
+    final separator = uri.userInfo.indexOf(':');
+    final user = separator < 0
+        ? uri.userInfo
+        : uri.userInfo.substring(0, separator);
+    final password = separator < 0 ? '' : uri.userInfo.substring(separator + 1);
+    final database = uri.path.replaceFirst('/', '');
+    if (user.isEmpty || database.isEmpty) {
+      throw FormatException('The URL needs a user and a database name');
+    }
+    return DatabaseConfig(
+      host: uri.host,
+      port: uri.hasPort ? uri.port : 4000,
+      user: Uri.decodeComponent(user),
+      password: Uri.decodeComponent(password),
+      database: Uri.decodeComponent(database),
+    );
+  }
+
+  final String host;
+  final int port;
+  final String user;
+  final String password;
+  final String database;
+}
+
 class LeaderboardDatabase {
-  LeaderboardDatabase(this.path, {DateTime Function()? clock})
+  LeaderboardDatabase(this.config, {DateTime Function()? clock})
     : _clock = clock ?? DateTime.now;
 
-  final String path;
+  final DatabaseConfig config;
   final DateTime Function() _clock;
-  Database? _db;
+  late final _ConnectionPool _pool = _ConnectionPool(config);
 
   static const upgradeCatalog = {
     'jump_boost': 5,
@@ -66,6 +107,7 @@ class LeaderboardDatabase {
 
   static const maxNameLength = 24;
   static const minTokenLength = 16;
+  static const leaderboardSize = 100;
 
   /// Runs left open longer than this can no longer be submitted.
   static const maxRunDuration = Duration(hours: 6);
@@ -85,12 +127,16 @@ class LeaderboardDatabase {
   /// time.
   static double maxDistanceForSeconds(double seconds) {
     final pixels =
-        _scrollSpeed * seconds + 0.5 * _speedIncreasePerSecond * seconds * seconds;
+        _scrollSpeed * seconds +
+        0.5 * _speedIncreasePerSecond * seconds * seconds;
     return pixels * _superspeedMultiplier / _pixelsPerMeter;
   }
 
   /// Most money a run of [distanceMeters] could earn at [coinMagnetLevel].
-  static double maxMoneyForDistance(double distanceMeters, int coinMagnetLevel) {
+  static double maxMoneyForDistance(
+    double distanceMeters,
+    int coinMagnetLevel,
+  ) {
     final perMeter =
         _moneyPerMeter * (1 + coinMagnetLevel * _coinMagnetBonusPerLevel);
     final bosses = (distanceMeters / _bossIntervalMeters).floor();
@@ -102,97 +148,98 @@ class LeaderboardDatabase {
       sha256.convert(utf8.encode(token)).toString();
 
   Future<void> open() async {
-    final file = File(path);
-    await file.parent.create(recursive: true);
-    _db = sqlite3.open(path);
-    _db!.execute('''
+    // utf8mb4_bin keeps names case-sensitive, so "Rex" and "rex" are
+    // different players.
+    await _pool.execute('''
       CREATE TABLE IF NOT EXISTS leaderboard (
-        player_name TEXT PRIMARY KEY,
-        best_distance REAL NOT NULL,
-        money REAL NOT NULL DEFAULT 0,
-        updated_at TEXT NOT NULL,
-        token_hash TEXT
-      )
+        player_name VARCHAR($maxNameLength) COLLATE utf8mb4_bin NOT NULL PRIMARY KEY,
+        best_distance DOUBLE NOT NULL,
+        money DOUBLE NOT NULL DEFAULT 0,
+        token_hash CHAR(64) NULL,
+        updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+          ON UPDATE CURRENT_TIMESTAMP(3),
+        KEY leaderboard_rank (best_distance, player_name)
+      ) DEFAULT CHARSET = utf8mb4
     ''');
-    final columns = _db!.select('PRAGMA table_info(leaderboard)');
-    if (!columns.any((column) => column['name'] == 'token_hash')) {
-      // Databases created before names were tied to a token.
-      _db!.execute('ALTER TABLE leaderboard ADD COLUMN token_hash TEXT');
-    }
-    _db!.execute('''
+    await _pool.execute('''
       CREATE TABLE IF NOT EXISTS player_upgrades (
-        player_name TEXT NOT NULL,
-        upgrade_id TEXT NOT NULL,
-        level INTEGER NOT NULL DEFAULT 0,
+        player_name VARCHAR($maxNameLength) COLLATE utf8mb4_bin NOT NULL,
+        upgrade_id VARCHAR(32) NOT NULL,
+        level INT NOT NULL DEFAULT 0,
         PRIMARY KEY (player_name, upgrade_id)
-      )
+      ) DEFAULT CHARSET = utf8mb4
     ''');
-    _db!.execute('''
+    await _pool.execute('''
       CREATE TABLE IF NOT EXISTS runs (
-        run_id TEXT PRIMARY KEY,
-        token_hash TEXT NOT NULL UNIQUE,
-        started_at INTEGER NOT NULL
+        run_id CHAR(32) NOT NULL PRIMARY KEY,
+        token_hash CHAR(64) NOT NULL UNIQUE,
+        started_at BIGINT NOT NULL
       )
     ''');
   }
 
-  void close() {
-    _db?.dispose();
-    _db = null;
+  Future<void> close() => _pool.close();
+
+  /// Empties every table. Only for tests.
+  Future<void> debugDeleteEverything() async {
+    for (final table in ['runs', 'player_upgrades', 'leaderboard']) {
+      await _pool.execute('DELETE FROM $table');
+    }
   }
 
-  List<LeaderboardRow> listRanked() {
-    final db = _requireDb;
-    final result = db.select('''
+  Future<List<LeaderboardRow>> listRanked() async {
+    final result = await _pool.execute('''
       SELECT player_name, best_distance, money
       FROM leaderboard
       ORDER BY best_distance DESC, player_name ASC
+      LIMIT $leaderboardSize
     ''');
 
+    final rows = result.rows.toList();
     return [
-      for (var index = 0; index < result.length; index++)
+      for (var index = 0; index < rows.length; index++)
         LeaderboardRow(
           rank: index + 1,
-          playerName: result[index]['player_name'] as String,
-          distanceMeters: (result[index]['best_distance'] as num).toDouble(),
-          money: (result[index]['money'] as num).toDouble(),
+          playerName: rows[index].colByName('player_name')!,
+          distanceMeters: rows[index].typedColByName<double>('best_distance')!,
+          money: rows[index].typedColByName<double>('money')!,
         ),
     ];
   }
 
-  /// Opens a new run for [tokenHash], discarding any run it left open, so a
+  /// Opens a new run for [tokenHash], replacing any run it left open, so a
   /// player can only have one run's worth of time counting at once.
-  String startRun(String tokenHash) {
-    final db = _requireDb;
+  Future<String> startRun(String tokenHash) async {
     final random = Random.secure();
     final runId = [
-      for (var i = 0; i < 16; i++) random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+      for (var i = 0; i < 16; i++)
+        random.nextInt(256).toRadixString(16).padLeft(2, '0'),
     ].join();
-    db.execute('DELETE FROM runs WHERE token_hash = ?', [tokenHash]);
-    db.execute(
-      'INSERT INTO runs (run_id, token_hash, started_at) VALUES (?, ?, ?)',
-      [runId, tokenHash, _clock().millisecondsSinceEpoch],
+    await _pool.execute(
+      '''
+      INSERT INTO runs (run_id, token_hash, started_at)
+      VALUES (:run, :token, :started)
+      ON DUPLICATE KEY UPDATE
+        run_id = VALUES(run_id), started_at = VALUES(started_at)
+      ''',
+      {
+        'run': runId,
+        'token': tokenHash,
+        'started': _clock().millisecondsSinceEpoch,
+      },
     );
     return runId;
   }
 
   /// Validates a finished run against the time since [startRun] and the
   /// player's upgrades, then records it.
-  LeaderboardRow submitRun({
+  Future<LeaderboardRow> submitRun({
     required String tokenHash,
     required String runId,
     required String playerName,
     required double distanceMeters,
     required double money,
   }) {
-    final db = _requireDb;
-    final run = db.select(
-      'SELECT started_at FROM runs WHERE run_id = ? AND token_hash = ?',
-      [runId, tokenHash],
-    );
-    if (run.isEmpty) {
-      throw ApiException(400, 'Unknown or already submitted run');
-    }
     if (!distanceMeters.isFinite || distanceMeters < 0) {
       throw ApiException(400, 'distanceMeters must be a non-negative number');
     }
@@ -200,93 +247,79 @@ class LeaderboardDatabase {
       throw ApiException(400, 'money must be a non-negative number');
     }
 
-    final elapsed = _clock().difference(
-      DateTime.fromMillisecondsSinceEpoch(run.first['started_at'] as int),
-    );
-    if (elapsed > maxRunDuration) {
-      db.execute('DELETE FROM runs WHERE run_id = ?', [runId]);
-      throw ApiException(400, 'Run expired');
-    }
-    // One meter of slack covers rounding and clock jitter.
-    final seconds = elapsed.inMilliseconds / 1000;
-    if (distanceMeters > maxDistanceForSeconds(seconds) + 1) {
-      throw ApiException(400, 'Distance is not possible in the time played');
-    }
+    return _pool.transaction((conn) async {
+      // Locking the run row means a run submitted twice at once is only
+      // counted once.
+      final run = await conn.execute(
+        'SELECT started_at FROM runs WHERE run_id = :run AND token_hash = :token FOR UPDATE',
+        {'run': runId, 'token': tokenHash},
+      );
+      if (run.rows.isEmpty) {
+        throw ApiException(400, 'Unknown or already submitted run');
+      }
 
-    _claimName(playerName, tokenHash);
-    final magnet = _upgradeLevel(playerName, 'coin_magnet');
-    if (money > maxMoneyForDistance(distanceMeters, magnet) + 0.01) {
-      throw ApiException(400, 'Money is not possible for that distance');
-    }
+      final startedAt = run.rows.first.typedColByName<int>('started_at')!;
+      final elapsed = _clock().difference(
+        DateTime.fromMillisecondsSinceEpoch(startedAt),
+      );
+      if (elapsed > maxRunDuration) {
+        throw ApiException(400, 'Run expired');
+      }
+      // One meter of slack covers rounding and clock jitter.
+      final seconds = elapsed.inMilliseconds / 1000;
+      if (distanceMeters > maxDistanceForSeconds(seconds) + 1) {
+        throw ApiException(400, 'Distance is not possible in the time played');
+      }
 
-    db.execute('DELETE FROM runs WHERE run_id = ?', [runId]);
-    return upsertScore(
-      playerName: playerName,
-      distanceMeters: distanceMeters,
-      money: money,
-    );
+      await _claimName(conn, playerName, tokenHash);
+      final magnet = await _upgradeLevel(conn, playerName, 'coin_magnet');
+      if (money > maxMoneyForDistance(distanceMeters, magnet) + 0.01) {
+        throw ApiException(400, 'Money is not possible for that distance');
+      }
+
+      await conn.execute('DELETE FROM runs WHERE run_id = :run', {
+        'run': runId,
+      });
+      await conn.execute(
+        '''
+        UPDATE leaderboard
+        SET best_distance = GREATEST(best_distance, :distance),
+            money = money + :money
+        WHERE player_name = :name
+        ''',
+        {'distance': distanceMeters, 'money': money, 'name': playerName},
+      );
+      return _rankedRow(conn, playerName);
+    });
   }
 
   /// Records a score with no validation; [submitRun] is the API entry point.
-  LeaderboardRow upsertScore({
+  Future<LeaderboardRow> upsertScore({
     required String playerName,
     required double distanceMeters,
     required double money,
   }) {
-    final db = _requireDb;
-    final existing = db.select(
-      'SELECT best_distance, money FROM leaderboard WHERE player_name = ?',
-      [playerName],
-    );
-
-    final now = _clock().toUtc().toIso8601String();
-    if (existing.isEmpty) {
-      db.execute(
-        'INSERT INTO leaderboard (player_name, best_distance, money, updated_at) VALUES (?, ?, ?, ?)',
-        [playerName, distanceMeters, money, now],
+    return _pool.transaction((conn) async {
+      await conn.execute(
+        '''
+        INSERT INTO leaderboard (player_name, best_distance, money)
+        VALUES (:name, :distance, :money)
+        ON DUPLICATE KEY UPDATE
+          best_distance = GREATEST(best_distance, VALUES(best_distance)),
+          money = money + VALUES(money)
+        ''',
+        {'name': playerName, 'distance': distanceMeters, 'money': money},
       );
-    } else {
-      final previousBest = (existing.first['best_distance'] as num).toDouble();
-      final previousMoney = (existing.first['money'] as num).toDouble();
-      final best = distanceMeters > previousBest ? distanceMeters : previousBest;
-      final totalMoney = previousMoney + money;
-      db.execute(
-        'UPDATE leaderboard SET best_distance = ?, money = ?, updated_at = ? WHERE player_name = ?',
-        [best, totalMoney, now, playerName],
-      );
-    }
-
-    final ranked = listRanked();
-    return ranked.firstWhere((row) => row.playerName == playerName);
+      return _rankedRow(conn, playerName);
+    });
   }
 
   /// Read-only: unknown players get an empty profile without creating a row.
-  PlayerProfileRow getProfile(String playerName) {
-    final db = _requireDb;
-    final moneyRow = db.select(
-      'SELECT money FROM leaderboard WHERE player_name = ?',
-      [playerName],
-    );
-    final money = moneyRow.isEmpty
-        ? 0.0
-        : (moneyRow.first['money'] as num).toDouble();
-
-    final upgrades = db.select(
-      'SELECT upgrade_id, level FROM player_upgrades WHERE player_name = ?',
-      [playerName],
-    );
-
-    return PlayerProfileRow(
-      playerName: playerName,
-      money: money,
-      upgradeLevels: {
-        for (final row in upgrades)
-          row['upgrade_id'] as String: row['level'] as int,
-      },
-    );
+  Future<PlayerProfileRow> getProfile(String playerName) {
+    return _pool.withConnection((conn) => _profile(conn, playerName));
   }
 
-  PlayerProfileRow purchaseUpgrade({
+  Future<PlayerProfileRow> purchaseUpgrade({
     required String tokenHash,
     required String playerName,
     required String upgradeId,
@@ -297,88 +330,267 @@ class LeaderboardDatabase {
       throw ApiException(400, 'Unknown upgrade: $upgradeId');
     }
 
-    final db = _requireDb;
-    _claimName(playerName, tokenHash);
+    return _pool.transaction((conn) async {
+      // _claimName locks the player's row, so concurrent purchases are
+      // applied one at a time and cannot overspend.
+      await _claimName(conn, playerName, tokenHash);
 
-    final level = _upgradeLevel(playerName, upgradeId);
-    if (level >= maxLevel) {
-      throw ApiException(400, 'Upgrade already at max level');
-    }
+      final level = await _upgradeLevel(conn, playerName, upgradeId);
+      if (level >= maxLevel) {
+        throw ApiException(400, 'Upgrade already at max level');
+      }
 
-    final cost = baseCost * (level + 1);
-    final moneyRow = db.select(
-      'SELECT money FROM leaderboard WHERE player_name = ?',
-      [playerName],
+      final cost = baseCost * (level + 1);
+      final moneyRow = await conn.execute(
+        'SELECT money FROM leaderboard WHERE player_name = :name FOR UPDATE',
+        {'name': playerName},
+      );
+      final money = moneyRow.rows.first.typedColByName<double>('money')!;
+      if (money < cost) {
+        throw ApiException(400, 'Not enough money');
+      }
+
+      await conn.execute(
+        'UPDATE leaderboard SET money = money - :cost WHERE player_name = :name',
+        {'cost': cost, 'name': playerName},
+      );
+      await conn.execute(
+        '''
+        INSERT INTO player_upgrades (player_name, upgrade_id, level)
+        VALUES (:name, :upgrade, 1)
+        ON DUPLICATE KEY UPDATE level = level + 1
+        ''',
+        {'name': playerName, 'upgrade': upgradeId},
+      );
+
+      return _profile(conn, playerName);
+    });
+  }
+
+  Future<PlayerProfileRow> _profile(
+    MySQLConnection conn,
+    String playerName,
+  ) async {
+    final moneyRow = await conn.execute(
+      'SELECT money FROM leaderboard WHERE player_name = :name',
+      {'name': playerName},
     );
-    final money = (moneyRow.first['money'] as num).toDouble();
-    if (money < cost) {
-      throw ApiException(400, 'Not enough money');
-    }
+    final money = moneyRow.rows.isEmpty
+        ? 0.0
+        : moneyRow.rows.first.typedColByName<double>('money')!;
 
-    final now = _clock().toUtc().toIso8601String();
-    db.execute(
-      'UPDATE leaderboard SET money = ?, updated_at = ? WHERE player_name = ?',
-      [money - cost, now, playerName],
+    final upgrades = await conn.execute(
+      'SELECT upgrade_id, level FROM player_upgrades WHERE player_name = :name',
+      {'name': playerName},
     );
-    db.execute(
+
+    return PlayerProfileRow(
+      playerName: playerName,
+      money: money,
+      upgradeLevels: {
+        for (final row in upgrades.rows)
+          row.colByName('upgrade_id')!: row.typedColByName<int>('level')!,
+      },
+    );
+  }
+
+  /// [playerName]'s row with its position in the same order as [listRanked].
+  Future<LeaderboardRow> _rankedRow(
+    MySQLConnection conn,
+    String playerName,
+  ) async {
+    final result = await conn.execute(
       '''
-      INSERT INTO player_upgrades (player_name, upgrade_id, level) VALUES (?, ?, 1)
-      ON CONFLICT (player_name, upgrade_id) DO UPDATE SET level = level + 1
+      SELECT player_name, best_distance, money,
+        (SELECT COUNT(*) FROM leaderboard other
+         WHERE other.best_distance > me.best_distance
+            OR (other.best_distance = me.best_distance
+                AND other.player_name < me.player_name)) + 1 AS player_rank
+      FROM leaderboard me
+      WHERE player_name = :name
       ''',
-      [playerName, upgradeId],
+      {'name': playerName},
     );
-
-    return getProfile(playerName);
+    final row = result.rows.first;
+    return LeaderboardRow(
+      rank: row.typedColByName<int>('player_rank')!,
+      playerName: row.colByName('player_name')!,
+      distanceMeters: row.typedColByName<double>('best_distance')!,
+      money: row.typedColByName<double>('money')!,
+    );
   }
 
-  int _upgradeLevel(String playerName, String upgradeId) {
-    final rows = _requireDb.select(
-      'SELECT level FROM player_upgrades WHERE player_name = ? AND upgrade_id = ?',
-      [playerName, upgradeId],
+  Future<int> _upgradeLevel(
+    MySQLConnection conn,
+    String playerName,
+    String upgradeId,
+  ) async {
+    final rows = await conn.execute(
+      'SELECT level FROM player_upgrades WHERE player_name = :name AND upgrade_id = :upgrade',
+      {'name': playerName, 'upgrade': upgradeId},
     );
-    return rows.isEmpty ? 0 : rows.first['level'] as int;
+    return rows.rows.isEmpty
+        ? 0
+        : rows.rows.first.typedColByName<int>('level')!;
   }
 
-  /// Ensures [playerName] exists and belongs to [tokenHash]. Names that have
-  /// never been claimed (new, or from before tokens existed) go to the first
-  /// token that writes to them.
-  void _claimName(String playerName, String tokenHash) {
+  /// Ensures [playerName] exists and belongs to [tokenHash], and locks its
+  /// row until the transaction ends. Names that have never been claimed go to
+  /// the first token that writes to them.
+  Future<void> _claimName(
+    MySQLConnection conn,
+    String playerName,
+    String tokenHash,
+  ) async {
     if (playerName.isEmpty || playerName.length > maxNameLength) {
-      throw ApiException(
-        400,
-        'playerName must be 1-$maxNameLength characters',
-      );
+      throw ApiException(400, 'playerName must be 1-$maxNameLength characters');
     }
 
-    final db = _requireDb;
-    final existing = db.select(
-      'SELECT token_hash FROM leaderboard WHERE player_name = ?',
-      [playerName],
+    await conn.execute(
+      '''
+      INSERT INTO leaderboard (player_name, best_distance, money, token_hash)
+      VALUES (:name, 0, 0, :token)
+      ON DUPLICATE KEY UPDATE player_name = player_name
+      ''',
+      {'name': playerName, 'token': tokenHash},
     );
-    if (existing.isEmpty) {
-      db.execute(
-        'INSERT INTO leaderboard (player_name, best_distance, money, updated_at, token_hash) VALUES (?, 0, 0, ?, ?)',
-        [playerName, _clock().toUtc().toIso8601String(), tokenHash],
-      );
-      return;
-    }
+    final existing = await conn.execute(
+      'SELECT token_hash FROM leaderboard WHERE player_name = :name FOR UPDATE',
+      {'name': playerName},
+    );
 
-    final owner = existing.first['token_hash'] as String?;
+    final owner = existing.rows.first.colByName('token_hash');
     if (owner == null) {
-      db.execute(
-        'UPDATE leaderboard SET token_hash = ? WHERE player_name = ?',
-        [tokenHash, playerName],
+      await conn.execute(
+        'UPDATE leaderboard SET token_hash = :token WHERE player_name = :name',
+        {'token': tokenHash, 'name': playerName},
       );
     } else if (owner != tokenHash) {
       throw ApiException(403, 'That name belongs to another player');
     }
   }
+}
 
-  Database get _requireDb {
-    final db = _db;
-    if (db == null) {
-      throw StateError('Database not opened');
+/// A small connection pool. mysql_client_plus's own pool leaks a connection
+/// whenever a callback throws, which every rejected request would do.
+class _ConnectionPool {
+  _ConnectionPool(this.config);
+
+  final DatabaseConfig config;
+  static const _maxConnections = 5;
+
+  /// Idle connections older than this are dropped rather than reused, since
+  /// the database may have closed them.
+  static const _maxIdle = Duration(minutes: 5);
+
+  final _idle = <({MySQLConnection conn, DateTime since})>[];
+  final _waiters = <Completer<void>>[];
+  var _open = 0;
+
+  Future<IResultSet> execute(String sql, [Map<String, dynamic>? params]) =>
+      withConnection((conn) => conn.execute(sql, params));
+
+  Future<T> withConnection<T>(
+    Future<T> Function(MySQLConnection conn) action,
+  ) async {
+    final conn = await _acquire();
+    try {
+      return await action(conn);
+    } finally {
+      _release(conn);
     }
-    return db;
+  }
+
+  /// Runs [action] in a transaction, rolling back if it throws.
+  Future<T> transaction<T>(Future<T> Function(MySQLConnection conn) action) {
+    return withConnection((conn) async {
+      await conn.execute('BEGIN');
+      try {
+        final result = await action(conn);
+        await conn.execute('COMMIT');
+        return result;
+      } catch (_) {
+        try {
+          await conn.execute('ROLLBACK');
+        } catch (_) {
+          // A connection that cannot roll back is unusable; closing it
+          // makes _release drop it instead of returning it to the pool.
+          await conn.close();
+        }
+        rethrow;
+      }
+    });
+  }
+
+  Future<void> close() async {
+    for (final idle in _idle) {
+      await idle.conn.close();
+    }
+    _idle.clear();
+  }
+
+  Future<MySQLConnection> _acquire() async {
+    while (true) {
+      while (_idle.isNotEmpty) {
+        final idle = _idle.removeLast();
+        final stale = DateTime.now().difference(idle.since) > _maxIdle;
+        if (idle.conn.connected && !stale) {
+          return idle.conn;
+        }
+        _open--;
+        unawaited(idle.conn.close().catchError((_) {}));
+      }
+      if (_open < _maxConnections) {
+        _open++;
+        try {
+          return await _connect();
+        } catch (_) {
+          _open--;
+          _wakeWaiter();
+          rethrow;
+        }
+      }
+      final waiter = Completer<void>();
+      _waiters.add(waiter);
+      await waiter.future;
+    }
+  }
+
+  Future<MySQLConnection> _connect() async {
+    final conn = await MySQLConnection.createConnection(
+      host: config.host,
+      port: config.port,
+      userName: config.user,
+      password: config.password,
+      databaseName: config.database,
+      secure: true,
+      collation: 'utf8mb4_general_ci',
+      // The package accepts any certificate by default; verify it instead.
+      onBadCertificate: (_) => false,
+    );
+    await conn.connect();
+    // TiDB's default isolation reads a snapshot from when the transaction
+    // began, even after waiting on a row lock, so a purchase that waited for
+    // another would still see the old balance. READ COMMITTED gives each
+    // statement the latest committed data.
+    await conn.execute(
+      'SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED',
+    );
+    return conn;
+  }
+
+  void _release(MySQLConnection conn) {
+    if (conn.connected) {
+      _idle.add((conn: conn, since: DateTime.now()));
+    } else {
+      _open--;
+    }
+    _wakeWaiter();
+  }
+
+  void _wakeWaiter() {
+    if (_waiters.isNotEmpty) {
+      _waiters.removeAt(0).complete();
+    }
   }
 }

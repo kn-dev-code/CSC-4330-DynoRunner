@@ -8,13 +8,15 @@ import 'package:shelf_router/shelf_router.dart';
 import '../lib/database.dart';
 
 Future<void> main(List<String> args) async {
-  final port = int.tryParse(
-        Platform.environment['PORT'] ?? '',
-      ) ??
-      8080;
-  final dbPath =
-      Platform.environment['DB_PATH'] ?? 'data/leaderboard.sqlite';
-  final database = LeaderboardDatabase(dbPath);
+  final port = int.tryParse(Platform.environment['PORT'] ?? '') ?? 8080;
+  final databaseUrl = Platform.environment['DATABASE_URL'];
+  if (databaseUrl == null || databaseUrl.isEmpty) {
+    stderr.writeln(
+      'Set DATABASE_URL to mysql://user:password@host:4000/database',
+    );
+    exit(64);
+  }
+  final database = LeaderboardDatabase(DatabaseConfig.fromUrl(databaseUrl));
   await database.open();
 
   final router = Router()
@@ -27,7 +29,8 @@ Future<void> main(List<String> args) async {
     )
     ..post(
       '/players/<name>/upgrades',
-      (Request request, String name) => _purchaseHandler(request, database, name),
+      (Request request, String name) =>
+          _purchaseHandler(request, database, name),
     )
     ..get('/health', (_) => Response.ok('ok'));
 
@@ -39,11 +42,13 @@ Future<void> main(List<String> args) async {
 
   final server = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);
   // ignore: avoid_print
-  print('Leaderboard server listening on http://${server.address.host}:${server.port}');
+  print(
+    'Leaderboard server listening on http://${server.address.host}:${server.port}',
+  );
 }
 
 Future<Response> _listHandler(LeaderboardDatabase database) async {
-  final entries = database.listRanked();
+  final entries = await database.listRanked();
   return Response.ok(
     jsonEncode({
       'entries': [
@@ -60,8 +65,11 @@ Future<Response> _listHandler(LeaderboardDatabase database) async {
   );
 }
 
-Response _startRunHandler(Request request, LeaderboardDatabase database) {
-  final runId = database.startRun(_requireTokenHash(request));
+Future<Response> _startRunHandler(
+  Request request,
+  LeaderboardDatabase database,
+) async {
+  final runId = await database.startRun(_requireTokenHash(request));
   return Response.ok(jsonEncode({'runId': runId}), headers: _jsonHeaders);
 }
 
@@ -86,7 +94,7 @@ Future<Response> _submitHandler(
     throw ApiException(400, 'distanceMeters and money must be numbers');
   }
 
-  final saved = database.submitRun(
+  final saved = await database.submitRun(
     tokenHash: tokenHash,
     runId: runId,
     playerName: name,
@@ -105,8 +113,11 @@ Future<Response> _submitHandler(
   );
 }
 
-Response _profileHandler(LeaderboardDatabase database, String name) {
-  final profile = database.getProfile(name.trim());
+Future<Response> _profileHandler(
+  LeaderboardDatabase database,
+  String name,
+) async {
+  final profile = await database.getProfile(name.trim());
   return Response.ok(
     jsonEncode({
       'playerName': profile.playerName,
@@ -129,7 +140,7 @@ Future<Response> _purchaseHandler(
     throw ApiException(400, 'upgradeId is required');
   }
 
-  final profile = database.purchaseUpgrade(
+  final profile = await database.purchaseUpgrade(
     tokenHash: tokenHash,
     playerName: name.trim(),
     upgradeId: upgradeId,

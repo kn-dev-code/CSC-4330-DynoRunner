@@ -242,10 +242,7 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
     final enemy = _inactiveEnemies.removeAt(
       _random.nextInt(_inactiveEnemies.length),
     );
-    enemy.position = Vector2(
-      gameWidth + GameConfig.spawnMargin,
-      groundY - enemy.size.y,
-    );
+    enemy.spawnAt(gameWidth + GameConfig.spawnMargin);
     _active.add(enemy);
   }
 
@@ -279,7 +276,7 @@ class MapGenerator extends Component with HasGameReference<DynoGame> {
         wall.position = Vector2(-GameConfig.offscreenX, groundY);
         _inactiveMoving.add(wall);
       case final PatrolEnemy enemy:
-        enemy.position = Vector2(-GameConfig.offscreenX, groundY - enemy.size.y);
+        enemy.deactivate();
         _inactiveEnemies.add(enemy);
       default:
         break;

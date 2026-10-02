@@ -70,8 +70,8 @@ class DynoGame extends FlameGame
 
   double get currentScrollSpeed {
     final ramp =
-        (GameConfig.scrollSpeed + _runSeconds * GameConfig.speedIncreasePerSecond)
-            .clamp(GameConfig.scrollSpeed, GameConfig.maxScrollSpeed);
+        GameConfig.scrollSpeed +
+        _runSeconds * GameConfig.speedIncreasePerSecond;
     return ramp * powerUpManager.scrollSpeedMultiplier;
   }
 

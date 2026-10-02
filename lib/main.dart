@@ -172,6 +172,9 @@ class _TitleScreenState extends State<TitleScreen> with RouteAware {
                             Navigator.of(context).pushNamed('/sound-settings'),
                         icon: const Icon(Icons.volume_up),
                         label: const Text('Sound settings'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                        ),
                       ),
                     ],
                   ),

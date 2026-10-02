@@ -6,7 +6,6 @@ class GameConfig {
 
   static const scrollSpeed = 280.0;
   static const speedIncreasePerSecond = 4.0;
-  static const maxScrollSpeed = 560.0;
   static const minSpawnInterval = 1.5;
   static const maxSpawnInterval = 3.0;
   static const minObstacleGap = 150.0;

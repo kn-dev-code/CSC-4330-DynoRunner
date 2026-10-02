@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Release builds need this to reach the leaderboard server. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="dyno_app"
         android:name="${applicationName}"

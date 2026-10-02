@@ -11,9 +11,11 @@ class LeaderboardService {
     : _client = client ?? http.Client(),
       _baseUrl = baseUrl ?? defaultBaseUrl;
 
+  /// The deployed server on Render. To test against a local server, run with
+  /// `--dart-define=LEADERBOARD_URL=http://127.0.0.1:8080`.
   static const defaultBaseUrl = String.fromEnvironment(
     'LEADERBOARD_URL',
-    defaultValue: 'http://127.0.0.1:8080',
+    defaultValue: 'https://dyno-leaderboard.onrender.com',
   );
 
   final http.Client _client;

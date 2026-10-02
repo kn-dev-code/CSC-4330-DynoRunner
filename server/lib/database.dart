@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
+import 'package:mysql_client_plus/exception.dart';
 import 'package:mysql_client_plus/mysql_client_plus.dart';
 
 class LeaderboardRow {
@@ -84,12 +86,21 @@ class DatabaseConfig {
 }
 
 class LeaderboardDatabase {
-  LeaderboardDatabase(this.config, {DateTime Function()? clock})
-    : _clock = clock ?? DateTime.now;
+  LeaderboardDatabase(
+    this.config, {
+    DateTime Function()? clock,
+    this.requestTimeout = const Duration(seconds: 15),
+  }) : _clock = clock ?? DateTime.now;
 
   final DatabaseConfig config;
   final DateTime Function() _clock;
-  late final _ConnectionPool _pool = _ConnectionPool(config);
+  late final _ConnectionPool _pool = _ConnectionPool(
+    config,
+    timeout: requestTimeout,
+  );
+
+  /// Longest a request may wait on the database before failing.
+  final Duration requestTimeout;
 
   static const upgradeCatalog = {
     'jump_boost': 5,
@@ -186,6 +197,17 @@ class LeaderboardDatabase {
       await _pool.execute('DELETE FROM $table');
     }
   }
+
+  /// The database's id for the connection a request would use next. Only for
+  /// tests.
+  Future<int> debugConnectionId() async {
+    final result = await _pool.execute('SELECT CONNECTION_ID() AS id');
+    return result.rows.first.typedColByName<int>('id')!;
+  }
+
+  /// Kills another connection's session, as the database might on its own.
+  /// Only for tests.
+  Future<void> debugKillConnection(int id) => _pool.execute('KILL $id');
 
   Future<List<LeaderboardRow>> listRanked() async {
     final result = await _pool.execute('''
@@ -473,15 +495,26 @@ class LeaderboardDatabase {
 
 /// A small connection pool. mysql_client_plus's own pool leaks a connection
 /// whenever a callback throws, which every rejected request would do.
+///
+/// It also never notices a connection the database has dropped: queries on
+/// one simply never return. So every use has a deadline, connections that
+/// miss it are discarded, and long-idle connections are checked before reuse.
 class _ConnectionPool {
-  _ConnectionPool(this.config);
+  _ConnectionPool(this.config, {required this.timeout});
 
   final DatabaseConfig config;
+
+  /// Longest one request may hold a connection, including connecting.
+  final Duration timeout;
+
   static const _maxConnections = 5;
 
-  /// Idle connections older than this are dropped rather than reused, since
-  /// the database may have closed them.
+  /// Idle connections older than this are dropped rather than reused.
   static const _maxIdle = Duration(minutes: 5);
+
+  /// Idle connections older than this are pinged before being reused.
+  static const _checkAfterIdle = Duration(seconds: 30);
+  static const _checkTimeout = Duration(seconds: 3);
 
   final _idle = <({MySQLConnection conn, DateTime since})>[];
   final _waiters = <Completer<void>>[];
@@ -493,11 +526,26 @@ class _ConnectionPool {
   Future<T> withConnection<T>(
     Future<T> Function(MySQLConnection conn) action,
   ) async {
+    // No timeout here: an abandoned _acquire would still take a connection
+    // and never release it. Each step inside it has its own deadline, and
+    // waiting for a busy connection is bounded by its holder's deadline.
     final conn = await _acquire();
+    var healthy = true;
     try {
-      return await action(conn);
+      return await action(conn).timeout(timeout);
+    } on TimeoutException {
+      healthy = false;
+      rethrow;
+    } on MySQLClientException {
+      // Client-side failures (timeouts, closed sockets) leave the connection
+      // in an unknown state. Errors the server reports are fine to reuse.
+      healthy = false;
+      rethrow;
+    } on SocketException {
+      healthy = false;
+      rethrow;
     } finally {
-      _release(conn);
+      _release(conn, healthy: healthy);
     }
   }
 
@@ -510,13 +558,9 @@ class _ConnectionPool {
         await conn.execute('COMMIT');
         return result;
       } catch (_) {
-        try {
-          await conn.execute('ROLLBACK');
-        } catch (_) {
-          // A connection that cannot roll back is unusable; closing it
-          // makes _release drop it instead of returning it to the pool.
-          await conn.close();
-        }
+        // If this fails too, withConnection discards the connection, and the
+        // database rolls back the transaction when the connection closes.
+        await conn.execute('ROLLBACK');
         rethrow;
       }
     });
@@ -524,7 +568,7 @@ class _ConnectionPool {
 
   Future<void> close() async {
     for (final idle in _idle) {
-      await idle.conn.close();
+      _discard(idle.conn);
     }
     _idle.clear();
   }
@@ -533,12 +577,14 @@ class _ConnectionPool {
     while (true) {
       while (_idle.isNotEmpty) {
         final idle = _idle.removeLast();
-        final stale = DateTime.now().difference(idle.since) > _maxIdle;
-        if (idle.conn.connected && !stale) {
+        final age = DateTime.now().difference(idle.since);
+        if (idle.conn.connected &&
+            age < _maxIdle &&
+            (age < _checkAfterIdle || await _isAlive(idle.conn))) {
           return idle.conn;
         }
         _open--;
-        unawaited(idle.conn.close().catchError((_) {}));
+        _discard(idle.conn);
       }
       if (_open < _maxConnections) {
         _open++;
@@ -556,6 +602,15 @@ class _ConnectionPool {
     }
   }
 
+  Future<bool> _isAlive(MySQLConnection conn) async {
+    try {
+      await conn.execute('SELECT 1').timeout(_checkTimeout);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<MySQLConnection> _connect() async {
     final conn = await MySQLConnection.createConnection(
       host: config.host,
@@ -567,25 +622,37 @@ class _ConnectionPool {
       collation: 'utf8mb4_general_ci',
       // The package accepts any certificate by default; verify it instead.
       onBadCertificate: (_) => false,
-    );
-    await conn.connect();
+    ).timeout(timeout);
+    await conn.connect(timeoutMs: timeout.inMilliseconds);
     // TiDB's default isolation reads a snapshot from when the transaction
     // began, even after waiting on a row lock, so a purchase that waited for
     // another would still see the old balance. READ COMMITTED gives each
     // statement the latest committed data.
-    await conn.execute(
-      'SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED',
-    );
+    await conn
+        .execute('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED')
+        .timeout(timeout);
     return conn;
   }
 
-  void _release(MySQLConnection conn) {
-    if (conn.connected) {
+  void _release(MySQLConnection conn, {required bool healthy}) {
+    if (healthy && conn.connected) {
       _idle.add((conn: conn, since: DateTime.now()));
     } else {
       _open--;
+      _discard(conn);
     }
     _wakeWaiter();
+  }
+
+  /// Closes [conn] if it is in a state that allows it. A connection stuck
+  /// mid-query refuses to close; dropping it lets the database end the
+  /// session when it notices the dead socket.
+  void _discard(MySQLConnection conn) {
+    try {
+      unawaited(conn.close().catchError((_) {}));
+    } catch (_) {
+      // close() throws synchronously in some states.
+    }
   }
 
   void _wakeWaiter() {

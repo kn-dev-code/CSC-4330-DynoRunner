@@ -1,0 +1,3 @@
+# The database tests in different files share one database and empty it
+# before each test, so files must not run at the same time.
+concurrency: 1

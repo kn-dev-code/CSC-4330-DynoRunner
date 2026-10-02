@@ -253,4 +253,50 @@ void main() {
       throwsApi(400),
     );
   });
+
+  test('names with quotes, backslashes and emoji round-trip safely', () async {
+    // The MySQL client builds SQL text itself rather than using prepared
+    // statements, so these check its escaping.
+    const names = [
+      "O'Brien",
+      r'back\slash',
+      r"\'; DROP TABLE runs; --",
+      'colon :name',
+      '🦖 Dino',
+    ];
+    for (final name in names) {
+      await playRun(
+        token: 'token-$name',
+        name: name,
+        played: const Duration(seconds: 30),
+        distance: 10,
+        money: 2.5,
+      );
+    }
+
+    final stored = (await database.listRanked()).map((e) => e.playerName);
+    expect(stored, unorderedEquals(names));
+    for (final name in names) {
+      expect((await database.getProfile(name)).money, 2.5);
+    }
+  });
+
+  test('recovers when the database kills a pooled connection', () async {
+    final impatient = LeaderboardDatabase(
+      DatabaseConfig.fromUrl(_testDatabaseUrl!),
+      requestTimeout: const Duration(seconds: 3),
+    );
+    addTearDown(impatient.close);
+    final id = await impatient.debugConnectionId();
+    await database.debugKillConnection(id);
+
+    // The request on the dead connection may fail, but it must not hang, and
+    // the pool must keep working afterwards.
+    try {
+      await impatient.listRanked();
+    } catch (_) {}
+    for (var i = 0; i < 6; i++) {
+      expect(await impatient.listRanked(), isEmpty);
+    }
+  }, timeout: const Timeout(Duration(seconds: 30)));
 }

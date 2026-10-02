@@ -77,7 +77,6 @@ class BossDirector extends Component with HasGameReference<DynoGame> {
   void _completeBoss() {
     _active?.removeFromParent();
     _active = null;
-    game.money += GameConfig.bossMoneyBonus;
-    game.refreshNotifier.value++;
+    game.addBonusMoney(GameConfig.bossMoneyBonus);
   }
 }

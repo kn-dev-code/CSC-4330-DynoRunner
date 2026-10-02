@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'game/dyno_game.dart';
 import 'overlays/overlays.dart';
 import 'services/game_audio.dart';
+import 'services/leaderboard_service.dart';
+import 'services/player_identity.dart';
 import 'services/player_wallet.dart';
 import 'services/sound_settings.dart';
 
@@ -15,6 +17,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SoundSettings.instance.load();
   await PlayerWallet.instance.load();
+  await PlayerIdentity.instance.load();
   await GameAudio.initialize();
   runApp(const DynoRunnerApp());
 }
@@ -196,14 +199,21 @@ class GameScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Dyno Run')),
       body: GameWidget<DynoGame>.controlled(
-        gameFactory: () => DynoGame(
-          startImmediately: true,
-          runModifiers: playerUpgradesService.cachedModifiers,
-          onRunStarted: () => unawaited(GameAudio.playGameMusic()),
-          onRunEnded: () => unawaited(GameAudio.playGameOver()),
-          onJump: () => unawaited(GameAudio.playJump()),
-          onHit: () => unawaited(GameAudio.playHit()),
-        ),
+        gameFactory: () {
+          late final DynoGame game;
+          game = DynoGame(
+            startImmediately: true,
+            runModifiers: playerUpgradesService.cachedModifiers,
+            onRunStarted: () {
+              unawaited(GameAudio.playGameMusic());
+              game.serverRunId = _startServerRun();
+            },
+            onRunEnded: () => unawaited(GameAudio.playGameOver()),
+            onJump: () => unawaited(GameAudio.playJump()),
+            onHit: () => unawaited(GameAudio.playHit()),
+          );
+          return game;
+        },
         overlayBuilderMap: {
           'hud': (context, game) => HudOverlay(game: game),
           'gameOver': (context, game) => GameOverOverlay(game: game),
@@ -212,5 +222,18 @@ class GameScreen extends StatelessWidget {
         initialActiveOverlays: const ['hud'],
       ),
     );
+  }
+}
+
+/// Registers a run with the leaderboard server; null when it is unreachable,
+/// so the run can still be played offline.
+Future<String?> _startServerRun() async {
+  final leaderboard = LeaderboardService();
+  try {
+    return await leaderboard.startRun();
+  } catch (_) {
+    return null;
+  } finally {
+    leaderboard.dispose();
   }
 }

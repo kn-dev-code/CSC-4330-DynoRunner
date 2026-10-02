@@ -48,6 +48,7 @@ void main() {
     await game.ready();
     expect(director.isEngaged, isTrue);
 
+    game.update(0);
     final startMoney = game.money;
     final boss = game.world.children.whereType<BossEncounter>().first;
     boss.position.x = -boss.size.x - 1;
@@ -55,6 +56,13 @@ void main() {
 
     expect(director.isEngaged, isFalse);
     expect(game.money, startMoney + GameConfig.bossMoneyBonus);
+
+    // The bonus must survive later frames that recompute distance money.
+    game.update(0.1);
+    expect(
+      game.money,
+      greaterThanOrEqualTo(startMoney + GameConfig.bossMoneyBonus),
+    );
     game.onRemove();
   });
 }

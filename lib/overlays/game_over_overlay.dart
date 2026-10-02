@@ -48,7 +48,14 @@ class _GameOverOverlayState extends State<GameOverOverlay> {
 
     try {
       widget.game.playerName = name;
+      final runId = await widget.game.serverRunId;
+      if (runId == null) {
+        throw LeaderboardException(
+          'The server was unreachable when this run started.',
+        );
+      }
       await _leaderboard.submitScore(
+        runId: runId,
         playerName: name,
         distanceMeters: widget.game.distanceMeters,
         money: widget.game.money,

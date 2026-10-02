@@ -61,8 +61,17 @@ class DynoGame extends FlameGame
   late final BossDirector bossDirector;
 
   String playerName = 'Runner';
+
+  /// Server-issued id for the current run, needed to submit its score; set
+  /// by whoever handles [onRunStarted]. Resolves to null if the server could
+  /// not be reached.
+  Future<String?>? serverRunId;
   double distanceMeters = 0;
   double money = 0;
+
+  /// Money from events like bosses, kept apart so the per-frame distance
+  /// payout in [update] does not overwrite it.
+  double _bonusMoney = 0;
   double _runSeconds = 0;
 
   /// Why the last run ended, or null while a run is in progress.
@@ -84,6 +93,12 @@ class DynoGame extends FlameGame
 
   late final double _groundY;
   int _pitfallsIgnoredRemaining = 0;
+
+  void addBonusMoney(double amount) {
+    _bonusMoney += amount;
+    money += amount;
+    refreshNotifier.value++;
+  }
 
   bool consumePitfallSkip() {
     if (_pitfallsIgnoredRemaining <= 0) {
@@ -149,6 +164,7 @@ class DynoGame extends FlameGame
     _runSeconds = 0;
     distanceMeters = 0;
     money = 0;
+    _bonusMoney = 0;
     crashCause = null;
     mapGenerator.reset();
     powerUpManager.reset();
@@ -216,8 +232,9 @@ class DynoGame extends FlameGame
     _runSeconds += dt;
     money =
         distanceMeters *
-        GameConfig.moneyPerMeter *
-        runModifiers.moneyMultiplier;
+            GameConfig.moneyPerMeter *
+            runModifiers.moneyMultiplier +
+        _bonusMoney;
     refreshNotifier.value++;
   }
 

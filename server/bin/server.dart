@@ -20,6 +20,7 @@ Future<void> main(List<String> args) async {
   final router = Router()
     ..get('/leaderboard', (_) => _listHandler(database))
     ..post('/leaderboard', (request) => _submitHandler(request, database))
+    ..post('/runs', (request) => _startRunHandler(request, database))
     ..get(
       '/players/<name>/profile',
       (Request request, String name) => _profileHandler(database, name),
@@ -33,6 +34,7 @@ Future<void> main(List<String> args) async {
   final handler = Pipeline()
       .addMiddleware(_corsMiddleware)
       .addMiddleware(logRequests())
+      .addMiddleware(_errorMiddleware)
       .addHandler(router.call);
 
   final server = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);
@@ -58,46 +60,49 @@ Future<Response> _listHandler(LeaderboardDatabase database) async {
   );
 }
 
+Response _startRunHandler(Request request, LeaderboardDatabase database) {
+  final runId = database.startRun(_requireTokenHash(request));
+  return Response.ok(jsonEncode({'runId': runId}), headers: _jsonHeaders);
+}
+
 Future<Response> _submitHandler(
   Request request,
   LeaderboardDatabase database,
 ) async {
-  try {
-    final body = await request.readAsString();
-    final json = jsonDecode(body) as Map<String, dynamic>;
-    final name = (json['playerName'] as String?)?.trim();
-    final distance = json['distanceMeters'];
-    final money = json['money'];
+  final tokenHash = _requireTokenHash(request);
+  final json = await _readJson(request);
+  final name = (json['playerName'] as String?)?.trim();
+  final runId = json['runId'];
+  final distance = json['distanceMeters'];
+  final money = json['money'];
 
-    if (name == null || name.isEmpty) {
-      return Response(400, body: 'playerName is required', headers: _jsonHeaders);
-    }
-    if (distance is! num || money is! num) {
-      return Response(
-        400,
-        body: 'distanceMeters and money must be numbers',
-        headers: _jsonHeaders,
-      );
-    }
-
-    final saved = database.upsertScore(
-      playerName: name,
-      distanceMeters: distance.toDouble(),
-      money: money.toDouble(),
-    );
-
-    return Response.ok(
-      jsonEncode({
-        'rank': saved.rank,
-        'playerName': saved.playerName,
-        'distanceMeters': saved.distanceMeters,
-        'money': saved.money,
-      }),
-      headers: _jsonHeaders,
-    );
-  } on FormatException {
-    return Response(400, body: 'Invalid JSON body', headers: _jsonHeaders);
+  if (name == null || name.isEmpty) {
+    throw ApiException(400, 'playerName is required');
   }
+  if (runId is! String || runId.isEmpty) {
+    throw ApiException(400, 'runId is required');
+  }
+  if (distance is! num || money is! num) {
+    throw ApiException(400, 'distanceMeters and money must be numbers');
+  }
+
+  final saved = database.submitRun(
+    tokenHash: tokenHash,
+    runId: runId,
+    playerName: name,
+    distanceMeters: distance.toDouble(),
+    money: money.toDouble(),
+  );
+
+  return Response.ok(
+    jsonEncode({
+      'rank': saved.rank,
+      'playerName': saved.playerName,
+      'distanceMeters': saved.distanceMeters,
+      'money': saved.money,
+    }),
+    headers: _jsonHeaders,
+  );
 }
 
 Response _profileHandler(LeaderboardDatabase database, String name) {
@@ -117,37 +122,65 @@ Future<Response> _purchaseHandler(
   LeaderboardDatabase database,
   String name,
 ) async {
-  try {
-    final body = await request.readAsString();
-    final json = jsonDecode(body) as Map<String, dynamic>;
-    final upgradeId = json['upgradeId'] as String?;
-    if (upgradeId == null || upgradeId.isEmpty) {
-      return Response(400, body: 'upgradeId is required', headers: _jsonHeaders);
-    }
-
-    final profile = database.purchaseUpgrade(
-      playerName: name.trim(),
-      upgradeId: upgradeId,
-    );
-
-    return Response.ok(
-      jsonEncode({
-        'playerName': profile.playerName,
-        'money': profile.money,
-        'upgrades': profile.upgradeLevels,
-      }),
-      headers: _jsonHeaders,
-    );
-  } on StateError catch (error) {
-    return Response(400, body: error.message, headers: _jsonHeaders);
-  } on ArgumentError catch (error) {
-    return Response(400, body: '${error.message}', headers: _jsonHeaders);
-  } on FormatException {
-    return Response(400, body: 'Invalid JSON body', headers: _jsonHeaders);
+  final tokenHash = _requireTokenHash(request);
+  final json = await _readJson(request);
+  final upgradeId = json['upgradeId'] as String?;
+  if (upgradeId == null || upgradeId.isEmpty) {
+    throw ApiException(400, 'upgradeId is required');
   }
+
+  final profile = database.purchaseUpgrade(
+    tokenHash: tokenHash,
+    playerName: name.trim(),
+    upgradeId: upgradeId,
+  );
+
+  return Response.ok(
+    jsonEncode({
+      'playerName': profile.playerName,
+      'money': profile.money,
+      'upgrades': profile.upgradeLevels,
+    }),
+    headers: _jsonHeaders,
+  );
+}
+
+/// Reads the player's secret from `Authorization: Bearer <token>`.
+String _requireTokenHash(Request request) {
+  final header = request.headers['authorization'] ?? '';
+  const prefix = 'Bearer ';
+  final token = header.startsWith(prefix)
+      ? header.substring(prefix.length).trim()
+      : '';
+  if (token.length < LeaderboardDatabase.minTokenLength) {
+    throw ApiException(401, 'Missing or invalid player token');
+  }
+  return LeaderboardDatabase.hashToken(token);
+}
+
+Future<Map<String, dynamic>> _readJson(Request request) async {
+  try {
+    final json = jsonDecode(await request.readAsString());
+    if (json is Map<String, dynamic>) {
+      return json;
+    }
+  } on FormatException {
+    // Falls through to the error below.
+  }
+  throw ApiException(400, 'Invalid JSON body');
 }
 
 const _jsonHeaders = {'Content-Type': 'application/json'};
+
+Middleware _errorMiddleware = (Handler inner) {
+  return (Request request) async {
+    try {
+      return await inner(request);
+    } on ApiException catch (error) {
+      return Response(error.statusCode, body: error.message);
+    }
+  };
+};
 
 Middleware _corsMiddleware = (Handler inner) {
   return (Request request) async {
@@ -162,5 +195,5 @@ Middleware _corsMiddleware = (Handler inner) {
 const _corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };

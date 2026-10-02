@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'leaderboard_service.dart';
+import 'player_identity.dart';
 import 'player_profile.dart';
 import 'upgrade_catalog.dart';
 
@@ -45,7 +46,10 @@ class PlayerUpgradesService {
   }) async {
     final response = await _client.post(
       _purchaseUri(playerName),
-      headers: const {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        ...PlayerIdentity.instance.authHeaders,
+      },
       body: jsonEncode({'upgradeId': upgrade.id}),
     );
     if (response.statusCode != 200) {

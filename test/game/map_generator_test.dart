@@ -1,5 +1,9 @@
 import 'dart:math';
 
+import 'package:dyno_app/game/components/obstacles/pitfall.dart';
+import 'package:dyno_app/game/components/obstacles/moving_wall.dart';
+import 'package:dyno_app/game/components/obstacles/patrol_enemy.dart';
+
 import 'package:dyno_app/game/components/cave.dart';
 import 'package:dyno_app/game/components/collidable_sprite.dart';
 import 'package:dyno_app/game/components/map_generator.dart';
@@ -129,30 +133,43 @@ void main() {
       game.onRemove();
     });
 
-    test('spawns obstacles over time when playing', () async {
-      final game = await _loadGame();
-      final generator = game.mapGenerator;
+    for (final kind in ['wall', 'cave', 'pitfall', 'moving wall', 'enemy']) {
+      test('spawns $kind over time when playing', () async {
+        final game = await _loadGame();
+        game.mapGenerator.removeFromParent();
+        final generator = MapGenerator(
+          groundY: game.player.groundY,
+          caveChance: kind == 'cave' ? 1 : 0,
+          pitfallChance: kind == 'pitfall' ? 1 : 0,
+          movingWallChance: kind == 'moving wall' ? 1 : 0,
+          enemyChance: kind == 'enemy' ? 1 : 0,
+          random: Random(0),
+        );
+        await game.world.add(generator);
+        await game.ready();
 
-      for (var frame = 0; frame < 120; frame++) {
-        game.update(1 / 60);
-      }
-
-      expect(
-        generator.obstacles.length + generator.caves.length,
-        greaterThanOrEqualTo(1),
-      );
-      expect(
-        generator.obstacles.map((obstacle) => obstacle.artwork).toSet(),
-        anyOf([
-          <GameSprite>{},
-          {GameSprite.wallShort},
-          {GameSprite.wallTall},
-          {GameSprite.wallShort, GameSprite.wallTall},
-        ]),
-      );
-      game.onRemove();
-    });
-
+        // Pooled components are offscreen until they actually spawn.
+        Iterable<PositionComponent> visibleObstacles() => generator.children
+            .whereType<PositionComponent>()
+            .where((obstacle) => obstacle.position.x > 0);
+        expect(visibleObstacles(), isEmpty);
+        for (var frame = 0; frame < 120; frame++) {
+          game.update(1 / 60);
+        }
+        final obstacle = visibleObstacles().single;
+        final expectedType = switch (kind) {
+          'wall' => CollidableSprite,
+          'cave' => Cave,
+          'pitfall' => Pitfall,
+          'moving wall' => MovingWall,
+          'enemy' => PatrolEnemy,
+          _ => throw StateError('Unknown obstacle kind'),
+        };
+        expect(obstacle.runtimeType, expectedType);
+        expect(game.state, GameState.playing);
+        game.onRemove();
+      });
+    }
     test('scrolls obstacles left and removes off-screen ones', () async {
       final game = await _loadGame();
       final generator = MapGenerator(
